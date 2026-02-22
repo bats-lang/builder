@@ -2,7 +2,3 @@
 name = "builder"
 kind = "lib"
 unsafe = false
-
-[dependencies]
-array = { git = "https://github.com/bats-lang/array.git", version = "main" }
-arith = { git = "https://github.com/bats-lang/arith.git", version = "main" }
