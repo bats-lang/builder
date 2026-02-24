@@ -7,3 +7,4 @@ release/
 _bats_*
 bats_modules/
 bats.lock
+docs/
