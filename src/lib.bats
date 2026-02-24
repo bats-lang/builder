@@ -1,5 +1,5 @@
 (* builder -- append-only byte string builder *)
-(* Fixed-capacity buffer (64KB). No $UNSAFE. *)
+(* Fixed-capacity buffer (512KB). No $UNSAFE. *)
 
 #include "share/atspre_staload.hats"
 
@@ -10,7 +10,7 @@
    Constants
    ============================================================ *)
 
-#pub stadef BUILDER_CAP = 65536
+#pub stadef BUILDER_CAP = 524288
 
 (* ============================================================
    Types
@@ -47,7 +47,7 @@
   (b: !builder): int
 
 #pub fn to_arr
-  (b: builder): @([l:agz] $A.arr(byte, l, 65536), int)
+  (b: builder): @([l:agz] $A.arr(byte, l, 524288), int)
 
 #pub fun builder_free
   (b: builder): void
@@ -57,7 +57,7 @@
    ============================================================ *)
 
 implement create() = let
-  val buf = $A.alloc<byte>(65536)
+  val buf = $A.alloc<byte>(524288)
 in builder_mk(buf, 0) end
 
 implement put_byte(b, v) = let
@@ -65,7 +65,7 @@ implement put_byte(b, v) = let
   val p = g1ofg0(pos)
 in
   if p >= 0 then
-    if p < 65536 then let
+    if p < 524288 then let
       val () = $A.set<byte>(buf, p, $A.int2byte($AR.checked_byte(v)))
       val () = pos := g0ofg1(p + 1)
       prval () = fold@(b)
@@ -86,7 +86,7 @@ implement put_bytes{lb}{n}(b, src, len) = let
       val off = g1ofg0(base + i)
     in
       if off >= 0 then
-        if off < 65536 then let
+        if off < 524288 then let
           val byte_val = $A.read<byte>(src, i)
           val () = $A.set<byte>(buf, off, byte_val)
         in loop(buf, src, i + 1, len, base) end
