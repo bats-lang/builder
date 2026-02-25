@@ -70,7 +70,11 @@ in
       val () = pos := g0ofg1(p + 1)
       prval () = fold@(b)
     in end
-    else let prval () = fold@(b) in end
+    else let
+      val () = println! ("FATAL: builder overflow at ", p, " bytes (capacity 524288)")
+      prval () = fold@(b)
+      val () = assertloc(false)
+    in end
   else let prval () = fold@(b) in end
 end
 
