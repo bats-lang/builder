@@ -62,17 +62,10 @@ in builder_mk(buf, 0) end
 
 implement put_byte(b, v) = let
   val+ @builder_mk(buf, pos) = b
-  val p = g1ofg0(pos)
-in
-  if p >= 0 then
-    if p < 524288 then let
-      val () = $A.set<byte>(buf, p, $A.int2byte($AR.checked_byte(v)))
-      val () = pos := g0ofg1(p + 1)
-      prval () = fold@(b)
-    in end
-    else let prval () = fold@(b) in end
-  else let prval () = fold@(b) in end
-end
+  val () = $A.set<byte>(buf, $AR.checked_idx(pos, 524288), $A.int2byte($AR.checked_byte(v)))
+  val () = pos := pos + 1
+  prval () = fold@(b)
+in end
 
 implement put_bytes{lb}{n}(b, src, len) = let
   val+ @builder_mk(buf, pos) = b
@@ -83,17 +76,11 @@ implement put_bytes{lb}{n}(b, src, len) = let
      i: int i, len: int n, base: int): void =
     if i >= len then ()
     else let
-      val off = g1ofg0(base + i)
-    in
-      if off >= 0 then
-        if off < 524288 then let
-          val byte_val = $A.read<byte>(src, i)
-          val () = $A.set<byte>(buf, off, byte_val)
-        in loop(buf, src, i + 1, len, base) end
-      else ()
-    end
+      val byte_val = $A.read<byte>(src, i)
+      val () = $A.set<byte>(buf, $AR.checked_idx(base + i, 524288), byte_val)
+    in loop(buf, src, i + 1, len, base) end
   val () = loop(buf, src, 0, len, p0)
-  val new_pos = p0 + g0ofg1(len)
+  val new_pos = p0 + len
   val () = pos := new_pos
   prval () = fold@(b)
 in end
