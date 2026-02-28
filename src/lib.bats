@@ -134,6 +134,56 @@ implement builder_free(b) = let
 in $A.free<byte>(buf) end
 
 (* ============================================================
+   String writing
+   ============================================================ *)
+
+#pub fun bput_loop {sn:nat}{i:nat | i <= sn}{fuel:nat}
+  (b: !builder, s: string sn, slen: int sn, i: int i, fuel: int fuel): void
+
+implement bput_loop(b, s, slen, i, fuel) =
+  if fuel <= 0 then ()
+  else if i >= slen then ()
+  else let
+    val c = char2int0(string_get_at(s, i))
+    val () = put_byte(b, c)
+  in bput_loop(b, s, slen, i + 1, fuel - 1) end
+
+#pub fn bput {sn:nat} (b: !builder, s: string sn): void
+
+implement bput(b, s) = let
+  val slen_sz = string1_length(s)
+  val slen = g1u2i(slen_sz)
+in bput_loop(b, s, slen, 0, $AR.checked_nat(slen + 1)) end
+
+#pub fn bput_int(b: !builder, v: int): void
+
+implement bput_int(b, v) = let
+  val digits = $A.alloc<byte>(16)
+  fun fill {ld:agz}{fuel:nat} .<fuel>.
+    (digits: !$A.arr(byte, ld, 16), v: int, pos: int, fuel: int fuel): int =
+    if fuel <= 0 then pos
+    else if v < 10 then let
+      val () = $A.set<byte>(digits, $AR.checked_idx(pos, 16), int2byte0(48 + v))
+    in pos + 1 end
+    else let
+      val () = $A.set<byte>(digits, $AR.checked_idx(pos, 16), int2byte0(48 + $AR.mod_int_int(v, 10)))
+    in fill(digits, $AR.div_int_int(v, 10), pos + 1, fuel - 1) end
+  val is_neg = v < 0
+  val abs_v = (if is_neg then 0 - v else v): int
+  val ndigits = fill(digits, abs_v, 0, 15)
+  val () = (if is_neg then put_byte(b, 45) else ())
+  fun emit {ld:agz}{fuel:nat} .<fuel>.
+    (digits: !$A.arr(byte, ld, 16), b: !builder, pos: int, fuel: int fuel): void =
+    if fuel <= 0 then ()
+    else if pos < 0 then ()
+    else let
+      val () = put_byte(b, byte2int0($A.get<byte>(digits, $AR.checked_idx(pos, 16))))
+    in emit(digits, b, pos - 1, fuel - 1) end
+  val () = emit(digits, b, ndigits - 1, 16)
+  val () = $A.free<byte>(digits)
+in end
+
+(* ============================================================
    Static tests
    ============================================================ *)
 
