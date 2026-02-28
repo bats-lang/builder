@@ -187,32 +187,81 @@ in end
    Static tests
    ============================================================ *)
 
-fn _test_create_free(): void = let
+fn _check_byte {l:agz}
+  (arr: !$A.arr(byte, l, 524288), idx: int, expected: int): bool =
+  $AR.eq_int_int(byte2int0($A.get<byte>(arr, $AR.checked_idx(idx, 524288))), expected)
+
+fn _test_create_free(): bool = let
   val b = create()
   val () = builder_free(b)
-in end
+in true end
 
-fn _test_put_byte(): void = let
+fn _test_put_byte(): bool = let
   val b = create()
   val () = put_byte(b, 65)
   val () = put_byte(b, 66)
   val l = length(b)
-  val @(arr, _) = to_arr(b)
+  val @(arr, len) = to_arr(b)
+  val ok = l = 2 && len = 2
+    && _check_byte(arr, 0, 65)
+    && _check_byte(arr, 1, 66)
   val () = $A.free<byte>(arr)
-in end
+in ok end
 
-fn _test_put_int(): void = let
+fn _test_put_int(): bool = let
   val b = create()
   val () = put_int(b, 42)
-  val () = put_int(b, 0)
-  val () = put_int(b, ~1)
+  val l1 = length(b)
   val @(arr, _) = to_arr(b)
+  val ok = l1 = 2
+    && _check_byte(arr, 0, 52)  (* '4' *)
+    && _check_byte(arr, 1, 50)  (* '2' *)
   val () = $A.free<byte>(arr)
-in end
+in ok end
 
-fn _test_put_newline(): void = let
+fn _test_put_int_zero(): bool = let
+  val b = create()
+  val () = put_int(b, 0)
+  val @(arr, len) = to_arr(b)
+  val ok = len = 1 && _check_byte(arr, 0, 48) (* '0' *)
+  val () = $A.free<byte>(arr)
+in ok end
+
+fn _test_put_int_negative(): bool = let
+  val b = create()
+  val () = put_int(b, ~1)
+  val @(arr, len) = to_arr(b)
+  val ok = len = 2
+    && _check_byte(arr, 0, 45)  (* '-' *)
+    && _check_byte(arr, 1, 49)  (* '1' *)
+  val () = $A.free<byte>(arr)
+in ok end
+
+fn _test_put_newline(): bool = let
   val b = create()
   val () = put_newline(b)
-  val @(arr, _) = to_arr(b)
+  val @(arr, len) = to_arr(b)
+  val ok = len = 1 && _check_byte(arr, 0, 10)
   val () = $A.free<byte>(arr)
-in end
+in ok end
+
+fn _test_bput(): bool = let
+  val b = create()
+  val () = bput(b, "hi")
+  val @(arr, len) = to_arr(b)
+  val ok = len = 2
+    && _check_byte(arr, 0, 104) (* 'h' *)
+    && _check_byte(arr, 1, 105) (* 'i' *)
+  val () = $A.free<byte>(arr)
+in ok end
+
+fn _test_bput_int(): bool = let
+  val b = create()
+  val () = bput_int(b, 123)
+  val @(arr, len) = to_arr(b)
+  val ok = len = 3
+    && _check_byte(arr, 0, 49)  (* '1' *)
+    && _check_byte(arr, 1, 50)  (* '2' *)
+    && _check_byte(arr, 2, 51)  (* '3' *)
+  val () = $A.free<byte>(arr)
+in ok end
