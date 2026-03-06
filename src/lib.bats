@@ -14,6 +14,8 @@
 
 #pub stadef BUILDER_CAP = 524288
 
+macdef _BUILDER_CAP = 524288
+
 (* ============================================================
    Types
    ============================================================ *)
@@ -22,7 +24,7 @@
   | {lb:agz}{n:nat | n <= BUILDER_CAP}
     builder_mk(n) of ($A.arr(byte, lb, BUILDER_CAP), int(n))
 
-#pub typedef builder0 = [n:nat | n <= BUILDER_CAP] builder(n)
+#pub vtypedef builder0 = [n:nat | n <= BUILDER_CAP] builder(n)
 
 (* ============================================================
    Core API -- callers must prove space exists
@@ -70,7 +72,7 @@
    ============================================================ *)
 
 implement create() = let
-  val buf = $A.alloc<byte>(BUILDER_CAP)
+  val buf = $A.alloc<byte>(_BUILDER_CAP)
 in builder_mk(buf, 0) end
 
 implement put_byte{n}(b, v) = let
@@ -84,7 +86,7 @@ in end
 implement put_bytes{lb}{k}{n}(b, src, len) = let
   val+ @builder_mk(buf, pos) = b
   val p0 = pos
-  fun loop {i:nat | i <= k}{base:nat | base + k <= BUILDER_CAP} .<k - i>.
+  fun loop {lb2:agz}{i:nat | i <= k}{base:nat | base + k <= BUILDER_CAP} .<k - i>.
     (buf: !$A.arr(byte, lb2, BUILDER_CAP),
      src: !$A.borrow(byte, lb, k),
      i: int i, len: int k, base: int base): void =
@@ -223,9 +225,9 @@ fn _test_put_byte(): bool = let
   val () = put_byte(b, char2int0('B'))
   val l = length(b)
   val @(arr, len) = to_arr(b)
-  val ok = l = 2 && len = 2
-    && _check_byte(arr, 0, char2int0('A'))
-    && _check_byte(arr, 1, char2int0('B'))
+  val c0 = _check_byte(arr, 0, char2int0('A'))
+  val c1 = _check_byte(arr, 1, char2int0('B'))
+  val ok = l = 2 && len = 2 && c0 && c1
   val () = $A.free<byte>(arr)
 in ok end
 
@@ -234,9 +236,9 @@ fn _test_put_int(): bool = let
   val () = put_int(b, 42)
   val l1 = length(b)
   val @(arr, _) = to_arr(b)
-  val ok = l1 = 2
-    && _check_byte(arr, 0, char2int0('4'))
-    && _check_byte(arr, 1, char2int0('2'))
+  val c0 = _check_byte(arr, 0, char2int0('4'))
+  val c1 = _check_byte(arr, 1, char2int0('2'))
+  val ok = l1 = 2 && c0 && c1
   val () = $A.free<byte>(arr)
 in ok end
 
@@ -244,7 +246,8 @@ fn _test_put_int_zero(): bool = let
   val b = create()
   val () = put_int(b, 0)
   val @(arr, len) = to_arr(b)
-  val ok = len = 1 && _check_byte(arr, 0, char2int0('0'))
+  val c0 = _check_byte(arr, 0, char2int0('0'))
+  val ok = len = 1 && c0
   val () = $A.free<byte>(arr)
 in ok end
 
@@ -252,9 +255,9 @@ fn _test_put_int_negative(): bool = let
   val b = create()
   val () = put_int(b, ~1)
   val @(arr, len) = to_arr(b)
-  val ok = len = 2
-    && _check_byte(arr, 0, char2int0('-'))
-    && _check_byte(arr, 1, char2int0('1'))
+  val c0 = _check_byte(arr, 0, char2int0('-'))
+  val c1 = _check_byte(arr, 1, char2int0('1'))
+  val ok = len = 2 && c0 && c1
   val () = $A.free<byte>(arr)
 in ok end
 
@@ -262,7 +265,8 @@ fn _test_put_newline(): bool = let
   val b = create()
   val () = put_newline(b)
   val @(arr, len) = to_arr(b)
-  val ok = len = 1 && _check_byte(arr, 0, char2int0('\n'))
+  val c0 = _check_byte(arr, 0, char2int0('\n'))
+  val ok = len = 1 && c0
   val () = $A.free<byte>(arr)
 in ok end
 
@@ -270,9 +274,9 @@ fn _test_bput(): bool = let
   val b = create()
   val () = bput(b, "hi")
   val @(arr, len) = to_arr(b)
-  val ok = len = 2
-    && _check_byte(arr, 0, char2int0('h'))
-    && _check_byte(arr, 1, char2int0('i'))
+  val c0 = _check_byte(arr, 0, char2int0('h'))
+  val c1 = _check_byte(arr, 1, char2int0('i'))
+  val ok = len = 2 && c0 && c1
   val () = $A.free<byte>(arr)
 in ok end
 
@@ -280,9 +284,9 @@ fn _test_bput_int(): bool = let
   val b = create()
   val () = bput_int(b, 123)
   val @(arr, len) = to_arr(b)
-  val ok = len = 3
-    && _check_byte(arr, 0, char2int0('1'))
-    && _check_byte(arr, 1, char2int0('2'))
-    && _check_byte(arr, 2, char2int0('3'))
+  val c0 = _check_byte(arr, 0, char2int0('1'))
+  val c1 = _check_byte(arr, 1, char2int0('2'))
+  val c2 = _check_byte(arr, 2, char2int0('3'))
+  val ok = len = 3 && c0 && c1 && c2
   val () = $A.free<byte>(arr)
 in ok end
