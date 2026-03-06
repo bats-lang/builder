@@ -1,7 +1,5 @@
 (* builder -- append-only byte string builder *)
 (* Fixed-capacity buffer (512KB). No $UNSAFE. *)
-(* Safety: put_byte requires compile-time proof that pos < CAP. *)
-(* Callers must prove space; overflow is impossible, not checked. *)
 
 #include "share/atspre_staload.hats"
 
@@ -20,30 +18,16 @@ macdef _BUILDER_CAP = 524288
    Types
    ============================================================ *)
 
-#pub datavtype builder(n:int) =
-  | {lb:agz}{n:nat | n <= BUILDER_CAP}
-    builder_mk(n) of ($A.arr(byte, lb, BUILDER_CAP), int(n))
-
-#pub vtypedef builder0 = [n:nat | n <= BUILDER_CAP] builder(n)
+#pub datavtype builder0 =
+  | {lb:agz}
+    builder0_mk of ($A.arr(byte, lb, BUILDER_CAP), int)
 
 (* ============================================================
-   Core API -- callers must prove space exists
+   API
    ============================================================ *)
 
 #pub fun create
   (): builder0
-
-#pub fun put_byte
-  {n:nat | n < BUILDER_CAP}
-  (b: !builder(n) >> builder(n+1), v: int): void
-
-#pub fun put_bytes
-  {lb:agz}{k:nat}{n:nat | n + k <= BUILDER_CAP}
-  (b: !builder(n) >> builder(n+k), src: !$A.borrow(byte, lb, k), len: int k): void
-
-#pub fun length
-  {n:nat | n <= BUILDER_CAP}
-  (b: !builder(n)): int(n)
 
 #pub fn to_arr
   (b: builder0): @([l:agz] $A.arr(byte, l, BUILDER_CAP), int)
@@ -51,9 +35,8 @@ macdef _BUILDER_CAP = 524288
 #pub fun builder_free
   (b: builder0): void
 
-(* ============================================================
-   Edge API -- handle unknown position, silently stop when full
-   ============================================================ *)
+#pub fun length
+  (b: !builder0): int
 
 #pub fun put_byte_safe
   (b: !builder0 >> builder0, v: int): void
@@ -67,61 +50,47 @@ macdef _BUILDER_CAP = 524288
 #pub fun put_char
   (b: !builder0 >> builder0, v: int): void
 
+#pub fun bput_loop {sn:nat}{i:nat | i <= sn}{fuel:nat}
+  (b: !builder0 >> builder0, s: string sn, slen: int sn, i: int i, fuel: int fuel): void
+
+#pub fn bput {sn:nat} (b: !builder0 >> builder0, s: string sn): void
+
+#pub fn bput_int(b: !builder0 >> builder0, v: int): void
+
 (* ============================================================
-   Core implementations
+   Implementations
    ============================================================ *)
 
 implement create() = let
   val buf = $A.alloc<byte>(_BUILDER_CAP)
-in builder_mk(buf, 0) end
+in builder0_mk(buf, 0) end
 
-implement put_byte{n}(b, v) = let
-  val+ @builder_mk(buf, pos) = b
-  val p = pos
-  val () = $A.set<byte>(buf, p, int2byte0(v))
-  val () = pos := p + 1
-  prval () = fold@(b)
-in end
-
-implement put_bytes{lb}{k}{n}(b, src, len) = let
-  val+ @builder_mk(buf, pos) = b
-  val p0 = pos
-  fun loop {lb2:agz}{i:nat | i <= k}{base:nat | base + k <= BUILDER_CAP} .<k - i>.
-    (buf: !$A.arr(byte, lb2, BUILDER_CAP),
-     src: !$A.borrow(byte, lb, k),
-     i: int i, len: int k, base: int base): void =
-    if i >= len then ()
-    else let
-      val byte_val = $A.read<byte>(src, i)
-      val () = $A.set<byte>(buf, base + i, byte_val)
-    in loop(buf, src, i + 1, len, base) end
-  val () = loop(buf, src, 0, len, p0)
-  val () = pos := p0 + len
-  prval () = fold@(b)
-in end
-
-implement length{n}(b) = let
-  val+ @builder_mk(_, pos) = b
+implement length(b) = let
+  val+ @builder0_mk(_, pos) = b
   val p = pos
   prval () = fold@(b)
 in p end
 
 implement to_arr(b) = let
-  val+ ~builder_mk(buf, pos) = b
+  val+ ~builder0_mk(buf, pos) = b
 in @(buf, pos) end
 
 implement builder_free(b) = let
-  val+ ~builder_mk(buf, _) = b
+  val+ ~builder0_mk(buf, _) = b
 in $A.free<byte>(buf) end
 
-(* ============================================================
-   Edge implementations -- proof at the boundary
-   ============================================================ *)
-
 implement put_byte_safe(b, v) = let
-  val l = length(b)
+  val+ @builder0_mk(buf, pos) = b
+  val p: [p:int] int(p) = g1ofg0(pos)
 in
-  if l < 524288 then put_byte(b, v) else ()
+  if p >= 0 then
+    if p < 524288 then let
+      val () = $A.set<byte>(buf, p, int2byte0(v))
+      val () = pos := p + 1
+      prval () = fold@(b)
+    in end
+    else let prval () = fold@(b) in end
+  else let prval () = fold@(b) in end
 end
 
 implement put_int(b, n) = let
@@ -160,9 +129,6 @@ implement put_char(b, v) =
    String writing
    ============================================================ *)
 
-#pub fun bput_loop {sn:nat}{i:nat | i <= sn}{fuel:nat}
-  (b: !builder0 >> builder0, s: string sn, slen: int sn, i: int i, fuel: int fuel): void
-
 implement bput_loop(b, s, slen, i, fuel) =
   if fuel <= 0 then ()
   else if i >= slen then ()
@@ -171,14 +137,10 @@ implement bput_loop(b, s, slen, i, fuel) =
     val () = put_byte_safe(b, c)
   in bput_loop(b, s, slen, i + 1, fuel - 1) end
 
-#pub fn bput {sn:nat} (b: !builder0 >> builder0, s: string sn): void
-
 implement bput(b, s) = let
   val slen_sz = string1_length(s)
   val slen = g1u2i(slen_sz)
 in bput_loop(b, s, slen, 0, slen) end
-
-#pub fn bput_int(b: !builder0 >> builder0, v: int): void
 
 implement bput_int(b, v) = let
   val digits = $A.alloc<byte>(16)
