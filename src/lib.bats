@@ -31,7 +31,7 @@ macdef _BUILDER_CAP = 524288
    ============================================================ *)
 
 #pub fun create
-  (): builder(0)
+  (): builder0
 
 #pub fun put_byte
   {n:nat | n < BUILDER_CAP}
@@ -221,8 +221,8 @@ in true end
 
 fn _test_put_byte(): bool = let
   val b = create()
-  val () = put_byte(b, char2int0('A'))
-  val () = put_byte(b, char2int0('B'))
+  val () = put_byte_safe(b, char2int0('A'))
+  val () = put_byte_safe(b, char2int0('B'))
   val l = length(b)
   val @(arr, len) = to_arr(b)
   val c0 = _check_byte(arr, 0, char2int0('A'))
