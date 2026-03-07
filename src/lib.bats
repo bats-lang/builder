@@ -44,21 +44,20 @@ macdef _BUILDER_CAP = 524288
 #pub fun put_byte {n:nat | n < BUILDER_CAP}
   (b: !builder(n) >> builder(n+1), v: int): void
 
-#pub fun put_int
-  (b: !builder_v >> builder_v, n: int): void
+#pub fun put_char {n:nat | n < BUILDER_CAP}
+  (b: !builder(n) >> builder(n+1), v: int): void
 
-#pub fun put_newline
-  (b: !builder_v >> builder_v): void
+#pub fun put_newline {n:nat | n < BUILDER_CAP}
+  (b: !builder(n) >> builder(n+1)): void
 
-#pub fun put_char
-  (b: !builder_v >> builder_v, v: int): void
+#pub fun put_int {n:nat | n + 21 <= BUILDER_CAP}
+  (b: !builder(n) >> [m:nat | n <= m; m <= n + 21] builder(m), num: int): void
 
-#pub fun bput_loop {sn:nat}{i:nat | i <= sn}{fuel:nat}
-  (b: !builder_v >> builder_v, s: string sn, slen: int sn, i: int i, fuel: int fuel): void
+#pub fn bput {sn:nat}{n:nat | n + sn <= BUILDER_CAP}
+  (b: !builder(n) >> [m:nat | n <= m; m <= n + sn] builder(m), s: string sn): void
 
-#pub fn bput {sn:nat} (b: !builder_v >> builder_v, s: string sn): void
-
-#pub fn bput_int(b: !builder_v >> builder_v, v: int): void
+#pub fn bput_int {n:nat | n + 16 <= BUILDER_CAP}
+  (b: !builder(n) >> [m:nat | n <= m; m <= n + 16] builder(m), v: int): void
 
 (* ============================================================
    Implementations
@@ -89,81 +88,51 @@ implement put_byte(b, v) = let
   prval () = fold@(b)
 in end
 
-implement put_int(b, n) = let
-  fun _put_digits {fuel:nat} .<fuel>.
-    (b: !builder_v >> builder_v, n: int, fuel: int fuel): void =
+implement put_char(b, v) = put_byte(b, v)
+
+implement put_newline(b) = put_byte(b, char2int0('\n'))
+
+implement put_int(b, num) = let
+  fun _put_digits {n:nat}{fuel:nat | n + fuel <= BUILDER_CAP} .<fuel>.
+    (b: !builder(n) >> [m:nat | n <= m; m <= n + fuel] builder(m),
+     v: int, fuel: int fuel): void =
     if fuel <= 0 then ()
-    else if n < 10 then let
-      val+ @Builder(_, pos) = b
-      val p = pos
-      prval () = fold@(b)
-    in if p < _BUILDER_CAP then put_byte(b, n + char2int0('0')) else () end
+    else if v < 10 then
+      put_byte(b, v + char2int0('0'))
     else let
-      val () = _put_digits(b, n / 10, fuel - 1)
-      val+ @Builder(_, pos) = b
-      val p = pos
-      prval () = fold@(b)
-    in if p < _BUILDER_CAP then put_byte(b, (n mod 10) + char2int0('0')) else () end
+      val () = _put_digits(b, v / 10, fuel - 1)
+    in
+      put_byte(b, (v mod 10) + char2int0('0'))
+    end
 in
-  if n < 0 then let
-    val+ @Builder(_, pos) = b
-    val p = pos
-    prval () = fold@(b)
-    val () = (if p < _BUILDER_CAP then put_byte(b, char2int0('-')) else ())
-    val abs_n = ~n
+  if num < 0 then let
+    val () = put_byte(b, char2int0('-'))
+    val abs_num = ~num
   in
-    if abs_n < 0 then let
-      val+ @Builder(_, pos2) = b
-      val p2 = pos2
-      prval () = fold@(b)
-    in if p2 < _BUILDER_CAP then put_byte(b, char2int0('0')) else () end
+    if abs_num < 0 then
+      put_byte(b, char2int0('0'))
     else
-      _put_digits(b, abs_n, 20)
+      _put_digits(b, abs_num, 20)
   end
-  else if n = 0 then let
-    val+ @Builder(_, pos) = b
-    val p = pos
-    prval () = fold@(b)
-  in if p < _BUILDER_CAP then put_byte(b, char2int0('0')) else () end
+  else if num = 0 then
+    put_byte(b, char2int0('0'))
   else
-    _put_digits(b, n, 20)
+    _put_digits(b, num, 20)
 end
 
-implement put_newline(b) = let
-  val+ @Builder(_, pos) = b
-  val p = pos
-  prval () = fold@(b)
-in if p < _BUILDER_CAP then put_byte(b, char2int0('\n')) else () end
-
-implement put_char(b, v) = let
-  val+ @Builder(_, pos) = b
-  val p = pos
-  prval () = fold@(b)
-in if p < _BUILDER_CAP then put_byte(b, v) else () end
-
-(* ============================================================
-   String writing
-   ============================================================ *)
-
-implement bput_loop(b, s, slen, i, fuel) =
-  if fuel <= 0 then ()
-  else if i >= slen then ()
-  else let
-    val+ @Builder(_, pos) = b
-    val p = pos
-    prval () = fold@(b)
-  in
-    if p < _BUILDER_CAP then let
+implement bput(b, s) = let
+  fun loop {sn:nat}{i:nat | i <= sn}{fuel:nat}{n:nat | n + fuel <= BUILDER_CAP} .<fuel>.
+    (b: !builder(n) >> [m:nat | n <= m; m <= n + fuel] builder(m),
+     s: string sn, slen: int sn, i: int i, fuel: int fuel): void =
+    if fuel <= 0 then ()
+    else if i >= slen then ()
+    else let
       val c = char2int0(string_get_at(s, i))
       val () = put_byte(b, c)
-    in bput_loop(b, s, slen, i + 1, fuel - 1) end
-    else ()
-  end
-
-implement bput(b, s) = let
+    in loop(b, s, slen, i + 1, fuel - 1) end
   val slen_sz = string1_length(s)
   val slen = g1u2i(slen_sz)
-in bput_loop(b, s, slen, 0, slen) end
+in loop(b, s, slen, 0, slen) end
 
 implement bput_int(b, v) = let
   val digits = $A.alloc<byte>(16)
@@ -176,32 +145,32 @@ implement bput_int(b, v) = let
     else let
       val () = $A.set<byte>(digits, pos, int2byte0(char2int0('0') + $AR.mod_int_int(v, 10)))
     in fill(digits, $AR.div_int_int(v, 10), pos + 1, fuel - 1) end
-  val is_neg = v < 0
-  val abs_v = (if is_neg then 0 - v else v): int
-  val ndigits = fill(digits, abs_v, 0, 15)
-  val () = (if is_neg then let
-    val+ @Builder(_, pos) = b
-    val p = pos
-    prval () = fold@(b)
-  in if p < _BUILDER_CAP then put_byte(b, char2int0('-')) else () end
-  else ())
-  fun emit {ld:agz}{pos:int | pos < 16}{fuel:nat} .<fuel>.
-    (digits: !$A.arr(byte, ld, 16), b: !builder_v >> builder_v, pos: int pos, fuel: int fuel): void =
+  fun emit {ld:agz}{n:nat}{fuel:nat | n + fuel <= BUILDER_CAP}{pos:int | pos < 16} .<fuel>.
+    (digits: !$A.arr(byte, ld, 16), b: !builder(n) >> [m:nat | n <= m; m <= n + fuel] builder(m),
+     pos: int pos, fuel: int fuel): void =
     if fuel <= 0 then ()
     else if pos < 0 then ()
     else let
-      val+ @Builder(_, bpos) = b
-      val bp = bpos
-      prval () = fold@(b)
-    in
-      if bp < _BUILDER_CAP then let
-        val () = put_byte(b, byte2int0($A.get<byte>(digits, pos)))
-      in emit(digits, b, pos - 1, fuel - 1) end
-      else ()
-    end
-  val () = emit(digits, b, ndigits - 1, 16)
-  val () = $A.free<byte>(digits)
-in end
+      val () = put_byte(b, byte2int0($A.get<byte>(digits, pos)))
+    in emit(digits, b, pos - 1, fuel - 1) end
+in
+  if v < 0 then let
+    val abs_v = ~v
+  in
+    if abs_v < 0 then let
+      val () = put_byte(b, char2int0('0'))
+    in $A.free<byte>(digits) end
+    else let
+      val ndigits = fill(digits, abs_v, 0, 15)
+      val () = put_byte(b, char2int0('-'))
+      val () = emit(digits, b, ndigits - 1, 15)
+    in $A.free<byte>(digits) end
+  end
+  else let
+    val ndigits = fill(digits, v, 0, 15)
+    val () = emit(digits, b, ndigits - 1, 15)
+  in $A.free<byte>(digits) end
+end
 
 (* ============================================================
    Static tests
