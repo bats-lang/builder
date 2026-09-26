@@ -8,3 +8,5 @@ _bats_*
 bats_modules/
 bats.lock
 docs/
+build/
+dist/
