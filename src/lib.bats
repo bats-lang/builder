@@ -52,8 +52,8 @@ macdef _BUILDER_CAP = 524288
 
 (* Decimal digits of num, with a leading '-' when negative: at most 11
    bytes (an int is 32 bits: 10 digits and the sign). *)
-#pub fun put_int {n:nat | n + 11 <= BUILDER_CAP}{v:int}
-  (b: !builder(n) >> [m:nat | n < m; m <= n + 11] builder(m), num: int v): void
+#pub fun put_int {n:nat | n + 11 <= BUILDER_CAP}
+  (b: !builder(n) >> [m:nat | n < m; m <= n + 11] builder(m), num: int): void
 
 #pub fn bput {sn:nat}{n:nat | n + sn <= BUILDER_CAP}
   (b: !builder(n) >> builder(n + sn), s: string sn): void
@@ -99,29 +99,30 @@ implement put_newline(b) = put_byte(b, 10)
 implement put_int(b, num) = let
   (* The digits of u in its k lowest decimal places, without leading
      zeros: the higher places first, then this place's digit when u (this
-     digit and the higher ones) is not 0. *)
-  fun head_digits {n:nat}{u:nat}{k:nat | n + k <= BUILDER_CAP} .<k>.
-    (b: !builder(n) >> [m:nat | n <= m; m <= n + k] builder(m), u: int u, k: int k): void =
+     digit and the higher ones) is not 0. low_byte gives the digit's byte
+     value its bound; it is the identity on 48 .. 57. *)
+  fun head_digits {n:nat}{k:nat | n + k <= BUILDER_CAP} .<k>.
+    (b: !builder(n) >> [m:nat | n <= m; m <= n + k] builder(m), u: int, k: int k): void =
     if k = 0 then ()
     else let
-      val () = head_digits(b, ndiv(u, 10), k - 1)
+      val () = head_digits(b, u / 10, k - 1)
     in
-      if u > 0 then put_byte(b, nmod(u, 10) + 48) else ()
+      if u > 0 then put_byte(b, $AR.low_byte(u mod 10 + 48)) else ()
     end
   (* head's digits, then the last digit *)
-  fn digits {n:nat | n + 10 <= BUILDER_CAP}{h:nat}{d:nat | d < 10}
-    (b: !builder(n) >> [m:nat | n < m; m <= n + 10] builder(m), head: int h, last: int d): void = let
+  fn digits {n:nat | n + 10 <= BUILDER_CAP}
+    (b: !builder(n) >> [m:nat | n < m; m <= n + 10] builder(m), head: int, last: int): void = let
     val () = head_digits(b, head, 9)
-  in put_byte(b, last + 48) end
+  in put_byte(b, $AR.low_byte(last + 48)) end
 in
   if num < 0 then let
     val () = put_byte(b, 45)
     val m = ~(num + 1)
-    val r = nmod(m, 10)
+    val r = m mod 10
   in
-    if r = 9 then digits(b, ndiv(m, 10) + 1, 0) else digits(b, ndiv(m, 10), r + 1)
+    if r = 9 then digits(b, m / 10 + 1, 0) else digits(b, m / 10, r + 1)
   end
-  else digits(b, ndiv(num, 10), nmod(num, 10))
+  else digits(b, num / 10, num mod 10)
 end
 
 implement bput(b, s) = let
