@@ -1,0 +1,7 @@
+[package]
+name = "put_int"
+kind = "bin"
+
+[dependencies]
+"array" = ""
+"builder" = ""
