@@ -1,0 +1,8 @@
+[package]
+name = "parts"
+kind = "bin"
+
+[dependencies]
+"array" = ""
+"str" = ""
+"builder" = ""
