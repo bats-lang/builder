@@ -1,0 +1,8 @@
+[package]
+name = "into_arr_index_n"
+kind = "bin"
+
+[dependencies]
+"arith" = ""
+"array" = ""
+"builder" = ""

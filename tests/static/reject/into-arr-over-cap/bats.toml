@@ -1,0 +1,8 @@
+[package]
+name = "into_arr_over_cap"
+kind = "bin"
+
+[dependencies]
+"arith" = ""
+"array" = ""
+"builder" = ""

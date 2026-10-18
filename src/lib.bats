@@ -1,5 +1,8 @@
 (* builder -- append-only byte string builder *)
-(* Fixed-capacity buffer (512KB). Indexed type tracks position. *)
+(* Append-only buffer of at most BUILDER_CAP (512KB) bytes. The indexed type
+   tracks the length. The array inside starts at INITIAL_CAP bytes and is
+   made twice as large when a byte does not fit, so its capacity is not in
+   the type of builder: a builder of a few bytes costs a few bytes (#43). *)
 (* No runtime checks: callers prove capacity and byte ranges via constraints. *)
 
 #include "share/atspre_staload.hats"
@@ -15,13 +18,26 @@
 
 macdef _BUILDER_CAP = 524288
 
+(* The array of a new builder: 64 bytes (Go's bytes.Buffer smallBufferSize).
+   64 * 8192 = BUILDER_CAP, so doubling reaches BUILDER_CAP exactly. *)
+#pub stadef INITIAL_CAP = 64
+
 (* ============================================================
    Types
    ============================================================ *)
 
+(* The bytes of a builder holding m of them: an array of cap >= m bytes, of
+   which the first m are written. cap is existential, so what the array
+   holds in all is not in builder's type. It is public only because a
+   datavtype cannot be abstract without `assume`, which a safe package may
+   not write: nothing outside this package makes or takes apart a store. *)
+#pub datavtype builder_store(int) =
+  | {m:nat}{cap:pos | m <= cap; cap <= BUILDER_CAP}{lb:agz}
+    BuilderStore(m) of ($A.arr(byte, lb, cap), int(cap))
+
 #pub datavtype builder(int) =
-  | {lb:agz}{n:nat | n <= BUILDER_CAP}
-    Builder(n) of ($A.arr(byte, lb, BUILDER_CAP), int(n))
+  | {n:nat | n <= BUILDER_CAP}
+    Builder(n) of (builder_store(n), int(n))
 
 #pub vtypedef builder_v = [n:nat | n <= BUILDER_CAP] builder(n)
 
@@ -32,8 +48,16 @@ macdef _BUILDER_CAP = 524288
 #pub fun create
   (): builder(0)
 
+(* The text as an array of BUILDER_CAP bytes whose first n hold it, the rest
+   zero: made by copying, so a consumer typed arr(byte, l, BUILDER_CAP) is
+   unchanged. into_arr does not copy. *)
 #pub fn to_arr {n:nat | n <= BUILDER_CAP}
   (b: builder(n)): @([l:agz] $A.arr(byte, l, BUILDER_CAP), int n)
+
+(* The text as the builder's own array, of cap >= n bytes whose first n hold
+   it, the rest zero. No copy. *)
+#pub fn into_arr {n:nat | n <= BUILDER_CAP}
+  (b: builder(n)): @([cap:pos | n <= cap; cap <= BUILDER_CAP][l:agz] $A.arr(byte, l, cap), int n)
 
 #pub fun builder_free
   (b: builder_v): void
@@ -96,51 +120,59 @@ macdef _BUILDER_CAP = 524288
 #pub fun rope_list_free {k:nat} (cs: rope_list(k)): void
 
 (* ============================================================
-   Growing builder (#43): the array is as large as the caller's first
-   capacity and is made larger, by doubling, when a byte does not fit. So
-   a builder of a few bytes costs a few bytes, not BUILDER_CAP: create's
-   512 KiB is zeroed by alloc, and making one per path or line is what
-   bats check spent its system time on (page faults; measured in the PR).
-   The capacity is in the type, as the array's length is in builder's: a
-   byte is written only where the array has room, and the bytes are never
-   more than BUILDER_CAP. create and builder are unchanged, so no
-   dependent's proof or call changes.
-   ============================================================ *)
-
-#pub datavtype growing_builder(int, int) =
-  | {lb:agz}{n,cap:nat | n <= cap; cap <= BUILDER_CAP}
-    GrowingBuilder(n, cap) of ($A.arr(byte, lb, cap), int(n), int(cap))
-
-#pub vtypedef growing_builder_v = [n,cap:nat | n <= cap; cap <= BUILDER_CAP] growing_builder(n, cap)
-
-(* An empty builder whose array holds cap bytes to begin with *)
-#pub fun growing_create {cap:pos | cap <= BUILDER_CAP}
-  (cap: int cap): growing_builder(0, cap)
-
-#pub fun growing_length {n,cap:nat | n <= cap}
-  (b: !growing_builder(n, cap)): int(n)
-
-#pub fun growing_capacity {n,cap:nat | n <= cap}
-  (b: !growing_builder(n, cap)): int(cap)
-
-#pub fun growing_free {n,cap:nat | n <= cap}
-  (b: growing_builder(n, cap)): void
-
-#pub fun growing_to_arr {n,cap:nat | n <= cap}
-  (b: growing_builder(n, cap)): @([l:agz] $A.arr(byte, l, cap), int n)
-
-(* Appends the byte v, growing the array first when it is full *)
-#pub fun growing_put_byte {n,cap:nat | n < BUILDER_CAP; n <= cap; cap <= BUILDER_CAP}
-  {v:nat | v < 256}
-  (b: growing_builder(n, cap), v: int v): [new_cap:nat | n + 1 <= new_cap; new_cap <= BUILDER_CAP] growing_builder(n + 1, new_cap)
-
-(* ============================================================
    Implementations
    ============================================================ *)
 
+(* The bytes [0, k) of src, into dst at the same places. Both arrays are
+   proved to hold them: k <= n, and n is no more than either capacity. *)
+fun copy_bytes {l,m:agz}{n,cap,new_cap,k:nat | n <= cap; n <= new_cap; k <= n} .<n - k>.
+  (src: !$A.arr(byte, l, cap), dst: !$A.arr(byte, m, new_cap), n: int n, k: int k): void =
+  if k >= n then ()
+  else let
+    val () = $A.set<byte>(dst, k, $A.get<byte>(src, k))
+  in copy_bytes(src, dst, n, k + 1) end
+
+(* A new capacity for a store of capacity cap holding n bytes, with room
+   for one more and at most BUILDER_CAP: twice cap, or n + 1 when that is
+   more. Doubling makes the cost of a byte amortised constant. *)
+fn grown_cap {n,cap:nat | n < BUILDER_CAP; n <= cap; cap <= BUILDER_CAP}
+  (n: int n, cap: int cap): [new_cap:pos | n + 1 <= new_cap; new_cap <= BUILDER_CAP] int(new_cap) =
+  if cap + cap < n + 1 then n + 1
+  else if cap + cap <= _BUILDER_CAP then cap + cap
+  else _BUILDER_CAP
+
+(* The byte put in an array made larger: the old one is copied and freed.
+   Only the n bytes written are copied; the rest of the new array is zero. *)
+fn store_grow {n:nat | n < BUILDER_CAP}{v:nat | v < 256}
+  (st: builder_store(n), pos: int n, v: int v): builder_store(n + 1) = let
+  val+ ~BuilderStore(buf, old_cap) = st
+  val new_cap = grown_cap(pos, old_cap)
+  val grown = $A.alloc<byte>(new_cap)
+  val () = copy_bytes(buf, grown, pos, 0)
+  val () = $A.set<byte>(grown, pos, int2byte0(v))
+  val () = $A.free<byte>(buf)
+in BuilderStore(grown, new_cap) end
+
+(* Where the array has room the byte is written in place; else the array is
+   made larger first. The store's length is the builder's, so pos is the
+   first free place and pos <= cap. *)
+fn store_put {n:nat | n < BUILDER_CAP}{v:nat | v < 256}
+  (st: builder_store(n), pos: int n, v: int v): builder_store(n + 1) = let
+  val+ @BuilderStore(buf, cap) = st
+in
+  if pos < cap then let
+    val () = $A.set<byte>(buf, pos, int2byte0(v))
+    prval () = fold@(st)
+  in st end
+  else let
+    prval () = fold@(st)
+  in store_grow(st, pos, v) end
+end
+
 implement create() = let
-  val buf = $A.alloc<byte>(_BUILDER_CAP)
-in Builder(buf, 0) end
+  (* 64 is INITIAL_CAP; a literal, so that its type is int(64) *)
+  val buf = $A.alloc<byte>(64)
+in Builder(BuilderStore(buf, 64), 0) end
 
 implement length(b) = let
   val+ @Builder(_, pos) = b
@@ -148,18 +180,32 @@ implement length(b) = let
   prval () = fold@(b)
 in p end
 
-implement to_arr(b) = let
-  val+ ~Builder(buf, pos) = b
+implement into_arr(b) = let
+  val+ ~Builder(st, pos) = b
+  val+ ~BuilderStore(buf, _) = st
 in @(buf, pos) end
 
+implement to_arr(b) = let
+  val @(small, pos) = into_arr(b)
+  val big = $A.alloc<byte>(_BUILDER_CAP)
+  val () = copy_bytes(small, big, pos, 0)
+  val () = $A.free<byte>(small)
+in @(big, pos) end
+
 implement builder_free(b) = let
-  val+ ~Builder(buf, _) = b
+  val+ ~Builder(st, _) = b
+  val+ ~BuilderStore(buf, _) = st
 in $A.free<byte>(buf) end
 
+(* The store is taken out of the builder and put back one longer: the field
+   is unfolded (@), not consumed, because consuming a builder passed by !
+   and assigning it compiles to C that clang refuses (bats#327). *)
 implement put_byte(b, v) = let
-  val+ @Builder(buf, pos) = b
-  val () = $A.set<byte>(buf, pos, int2byte0(v))
-  val () = pos := pos + 1
+  val+ @Builder(st, pos) = b
+  val p = pos
+  val s = st
+  val () = st := store_put(s, p, v)
+  val () = pos := p + 1
   prval () = fold@(b)
 in end
 
@@ -250,7 +296,7 @@ implement rope_copy {l}{n}{i,j} (r, src, start, stop) = let
 in loop(r, src, start) end
 
 implement rope_append (r, b) = let
-  val @(arr, len) = to_arr(b)
+  val @(arr, len) = into_arr(b)
   val @(fz, bv) = $A.freeze<byte>(arr)
   val () = rope_copy(r, bv, 0, len)
   val () = $A.drop<byte>(fz, bv)
@@ -272,76 +318,6 @@ implement rope_list_free (cs) = let
     | ~rope_nil() => ()
     | ~rope_cons(x, _, tl) => let val () = $A.free<byte>(x) in loop(tl) end
 in loop(cs) end
-
-implement growing_create(cap) = let
-  val buf = $A.alloc<byte>(cap)
-in GrowingBuilder(buf, 0, cap) end
-
-implement growing_length(b) = let
-  val+ @GrowingBuilder(_, pos, _) = b
-  val p = pos
-  prval () = fold@(b)
-in p end
-
-implement growing_capacity(b) = let
-  val+ @GrowingBuilder(_, _, cap) = b
-  val c = cap
-  prval () = fold@(b)
-in c end
-
-implement growing_free(b) = let
-  val+ ~GrowingBuilder(buf, _, _) = b
-in $A.free<byte>(buf) end
-
-implement growing_to_arr(b) = let
-  val+ ~GrowingBuilder(buf, pos, _) = b
-in @(buf, pos) end
-
-(* The bytes [0, k) of src, into dst at the same places. Both arrays are
-   proved to hold them: k <= n, and n is no more than either capacity. *)
-fun copy_bytes {l,m:agz}{n,cap,new_cap,k:nat | n <= cap; n <= new_cap; k <= n} .<n - k>.
-  (src: !$A.arr(byte, l, cap), dst: !$A.arr(byte, m, new_cap), n: int n, k: int k): void =
-  if k >= n then ()
-  else let
-    val () = $A.set<byte>(dst, k, $A.get<byte>(src, k))
-  in copy_bytes(src, dst, n, k + 1) end
-
-(* A new capacity for a builder of capacity cap holding n bytes, with room
-   for one more and at most BUILDER_CAP: twice cap, or n + 1 when that is
-   more. Doubling makes the cost of a byte amortised constant. *)
-fn grown_cap {n,cap:nat | n < BUILDER_CAP; n <= cap; cap <= BUILDER_CAP}
-  (n: int n, cap: int cap): [new_cap:nat | n + 1 <= new_cap; new_cap <= BUILDER_CAP] int(new_cap) =
-  if cap + cap < n + 1 then n + 1
-  else if cap + cap <= _BUILDER_CAP then cap + cap
-  else _BUILDER_CAP
-
-(* The byte put in an array made larger: the old one is copied and freed *)
-fn put_grow {n,cap:nat | n < BUILDER_CAP; n <= cap; cap <= BUILDER_CAP} {v:nat | v < 256}
-  (b: growing_builder(n, cap), v: int v):
-  [new_cap:nat | n + 1 <= new_cap; new_cap <= BUILDER_CAP] growing_builder(n + 1, new_cap) = let
-  val+ ~GrowingBuilder(buf, pos, old_cap) = b
-  val new_cap = grown_cap(pos, old_cap)
-  val grown = $A.alloc<byte>(new_cap)
-  val () = copy_bytes(buf, grown, pos, 0)
-  val () = $A.set<byte>(grown, pos, int2byte0(v))
-  val () = $A.free<byte>(buf)
-in GrowingBuilder(grown, pos + 1, new_cap) end
-
-(* One view of the builder decides: where the array has room the byte is
-   written in place (the same value, its length one more); else the view
-   is given back and the array is made larger *)
-implement growing_put_byte(b, v) = let
-  val+ @GrowingBuilder(buf, pos, cap) = b
-in
-  if pos < cap then let
-    val () = $A.set<byte>(buf, pos, int2byte0(v))
-    val () = pos := pos + 1
-    prval () = fold@(b)
-  in b end
-  else let
-    prval () = fold@(b)
-  in put_grow(b, v) end
-end
 
 (* ============================================================
    Static tests
