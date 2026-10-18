@@ -96,6 +96,43 @@ macdef _BUILDER_CAP = 524288
 #pub fun rope_list_free {k:nat} (cs: rope_list(k)): void
 
 (* ============================================================
+   Growing builder (#43): the array is as large as the caller's first
+   capacity and is made larger, by doubling, when a byte does not fit. So
+   a builder of a few bytes costs a few bytes, not BUILDER_CAP (a
+   builder's 512 KiB, zeroed by alloc, was most of the time an unchanged
+   bats check spent in the kernel). The capacity is in the type, as the
+   array's length is in builder's: a byte is written only where the array
+   has room, and the bytes are never more than BUILDER_CAP.
+   ============================================================ *)
+
+#pub datavtype sbuilder(int, int) =
+  | {lb:agz}{n,cap:nat | n <= cap; cap <= BUILDER_CAP}
+    SBuilder(n, cap) of ($A.arr(byte, lb, cap), int(n), int(cap))
+
+#pub vtypedef sbuilder_v = [n,cap:nat | n <= cap; cap <= BUILDER_CAP] sbuilder(n, cap)
+
+(* An empty builder whose array holds cap bytes to begin with *)
+#pub fun screate {cap:pos | cap <= BUILDER_CAP}
+  (cap: int cap): sbuilder(0, cap)
+
+#pub fun slength {n,cap:nat | n <= cap}
+  (b: !sbuilder(n, cap)): int(n)
+
+#pub fun scapacity {n,cap:nat | n <= cap}
+  (b: !sbuilder(n, cap)): int(cap)
+
+#pub fun sbuilder_free {n,cap:nat | n <= cap}
+  (b: sbuilder(n, cap)): void
+
+#pub fun sto_arr {n,cap:nat | n <= cap}
+  (b: sbuilder(n, cap)): @([l:agz] $A.arr(byte, l, cap), int n)
+
+(* Appends the byte v, growing the array first when it is full *)
+#pub fun sput_byte {n,cap:nat | n < BUILDER_CAP; n <= cap; cap <= BUILDER_CAP}
+  {v:nat | v < 256}
+  (b: sbuilder(n, cap), v: int v): [new_cap:nat | n + 1 <= new_cap; new_cap <= BUILDER_CAP] sbuilder(n + 1, new_cap)
+
+(* ============================================================
    Implementations
    ============================================================ *)
 
@@ -233,6 +270,74 @@ implement rope_list_free (cs) = let
     | ~rope_nil() => ()
     | ~rope_cons(x, _, tl) => let val () = $A.free<byte>(x) in loop(tl) end
 in loop(cs) end
+
+implement screate(cap) = let
+  val buf = $A.alloc<byte>(cap)
+in SBuilder(buf, 0, cap) end
+
+implement slength(b) = let
+  val+ @SBuilder(_, pos, _) = b
+  val p = pos
+  prval () = fold@(b)
+in p end
+
+implement scapacity(b) = let
+  val+ @SBuilder(_, _, cap) = b
+  val c = cap
+  prval () = fold@(b)
+in c end
+
+implement sbuilder_free(b) = let
+  val+ ~SBuilder(buf, _, _) = b
+in $A.free<byte>(buf) end
+
+implement sto_arr(b) = let
+  val+ ~SBuilder(buf, pos, _) = b
+in @(buf, pos) end
+
+(* The bytes [0, k) of src, into dst at the same places. Both arrays are
+   proved to hold them: k <= n, and n is no more than either capacity. *)
+fun copy_bytes {l,m:agz}{n,cap,new_cap,k:nat | n <= cap; n <= new_cap; k <= n} .<n - k>.
+  (src: !$A.arr(byte, l, cap), dst: !$A.arr(byte, m, new_cap), n: int n, k: int k): void =
+  if k >= n then ()
+  else let
+    val () = $A.set<byte>(dst, k, $A.get<byte>(src, k))
+  in copy_bytes(src, dst, n, k + 1) end
+
+(* A new capacity for a builder of capacity cap holding n bytes, with room
+   for one more and at most BUILDER_CAP: twice cap, or n + 1 when that is
+   more. Doubling makes the cost of a byte amortised constant. *)
+fn grown_cap {n,cap:nat | n < BUILDER_CAP; n <= cap; cap <= BUILDER_CAP}
+  (n: int n, cap: int cap): [new_cap:nat | n + 1 <= new_cap; new_cap <= BUILDER_CAP] int(new_cap) =
+  if cap + cap < n + 1 then n + 1
+  else if cap + cap <= _BUILDER_CAP then cap + cap
+  else _BUILDER_CAP
+
+(* The byte put where the array has room: the builder is the same value,
+   its length one more *)
+fn sput_fits {n,cap:nat | n < cap; cap <= BUILDER_CAP} {v:nat | v < 256}
+  (b: sbuilder(n, cap), v: int v): sbuilder(n + 1, cap) = let
+  val+ @SBuilder(buf, pos, _) = b
+  val () = $A.set<byte>(buf, pos, int2byte0(v))
+  val () = pos := pos + 1
+  prval () = fold@(b)
+in b end
+
+(* The byte put in an array made larger: the old one is copied and freed *)
+fn sput_grow {n,cap:nat | n < BUILDER_CAP; n <= cap; cap <= BUILDER_CAP} {v:nat | v < 256}
+  (b: sbuilder(n, cap), v: int v):
+  [new_cap:nat | n + 1 <= new_cap; new_cap <= BUILDER_CAP] sbuilder(n + 1, new_cap) = let
+  val+ ~SBuilder(buf, pos, old_cap) = b
+  val new_cap = grown_cap(pos, old_cap)
+  val grown = $A.alloc<byte>(new_cap)
+  val () = copy_bytes(buf, grown, pos, 0)
+  val () = $A.set<byte>(grown, pos, int2byte0(v))
+  val () = $A.free<byte>(buf)
+in SBuilder(grown, pos + 1, new_cap) end
+
+implement sput_byte(b, v) =
+  if slength(b) < scapacity(b) then sput_fits(b, v)
+  else sput_grow(b, v)
 
 (* ============================================================
    Static tests
