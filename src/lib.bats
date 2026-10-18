@@ -315,16 +315,6 @@ fn grown_cap {n,cap:nat | n < BUILDER_CAP; n <= cap; cap <= BUILDER_CAP}
   else if cap + cap <= _BUILDER_CAP then cap + cap
   else _BUILDER_CAP
 
-(* The byte put where the array has room: the builder is the same value,
-   its length one more *)
-fn put_fits {n,cap:nat | n < cap; cap <= BUILDER_CAP} {v:nat | v < 256}
-  (b: growing_builder(n, cap), v: int v): growing_builder(n + 1, cap) = let
-  val+ @GrowingBuilder(buf, pos, _) = b
-  val () = $A.set<byte>(buf, pos, int2byte0(v))
-  val () = pos := pos + 1
-  prval () = fold@(b)
-in b end
-
 (* The byte put in an array made larger: the old one is copied and freed *)
 fn put_grow {n,cap:nat | n < BUILDER_CAP; n <= cap; cap <= BUILDER_CAP} {v:nat | v < 256}
   (b: growing_builder(n, cap), v: int v):
@@ -337,9 +327,21 @@ fn put_grow {n,cap:nat | n < BUILDER_CAP; n <= cap; cap <= BUILDER_CAP} {v:nat |
   val () = $A.free<byte>(buf)
 in GrowingBuilder(grown, pos + 1, new_cap) end
 
-implement growing_put_byte(b, v) =
-  if growing_length(b) < growing_capacity(b) then put_fits(b, v)
-  else put_grow(b, v)
+(* One view of the builder decides: where the array has room the byte is
+   written in place (the same value, its length one more); else the view
+   is given back and the array is made larger *)
+implement growing_put_byte(b, v) = let
+  val+ @GrowingBuilder(buf, pos, cap) = b
+in
+  if pos < cap then let
+    val () = $A.set<byte>(buf, pos, int2byte0(v))
+    val () = pos := pos + 1
+    prval () = fold@(b)
+  in b end
+  else let
+    prval () = fold@(b)
+  in put_grow(b, v) end
+end
 
 (* ============================================================
    Static tests
