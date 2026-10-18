@@ -1,0 +1,8 @@
+[package]
+name = "put_at_cap"
+kind = "bin"
+
+[dependencies]
+"arith" = ""
+"array" = ""
+"builder" = ""

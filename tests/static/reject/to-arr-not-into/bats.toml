@@ -1,0 +1,8 @@
+[package]
+name = "to_arr_not_into"
+kind = "bin"
+
+[dependencies]
+"arith" = ""
+"array" = ""
+"builder" = ""
