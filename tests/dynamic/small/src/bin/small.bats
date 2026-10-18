@@ -9,10 +9,10 @@
    BUILDER_CAP exactly. Each builder is freed; it runs under valgrind. *)
 
 fun fill {i,m:nat | i <= m; m <= 524288}{cap:nat | i <= cap; cap <= 524288} .<m - i>.
-  (b: $B.sbuilder(i, cap), i: int i, m: int m): [new_cap:nat | m <= new_cap; new_cap <= 524288] $B.sbuilder(m, new_cap) =
+  (b: $B.growing_builder(i, cap), i: int i, m: int m): [new_cap:nat | m <= new_cap; new_cap <= 524288] $B.growing_builder(m, new_cap) =
   if i >= m then b
   else let
-    val b2 = $B.sput_byte(b, $AR.low_byte(97 + i mod 26))
+    val b2 = $B.growing_put_byte(b, $AR.low_byte(97 + i mod 26))
   in fill(b2, i + 1, m) end
 
 (* Prints the bytes [i, k) of arr, then a newline *)
@@ -24,18 +24,18 @@ fun show {l:agz}{cap:nat}{i,k:nat | i <= k; k <= cap} .<k - i>.
   in show(arr, i + 1, k) end
 
 implement main0 () = let
-  val e = $B.screate(3)
-  val () = $B.sbuilder_free(e)
-  val b = fill($B.screate(2), 0, 1000)
-  val cap = $B.scapacity(b)
-  val @(arr, k) = $B.sto_arr(b)
+  val e = $B.growing_create(3)
+  val () = $B.growing_free(e)
+  val b = fill($B.growing_create(2), 0, 1000)
+  val cap = $B.growing_capacity(b)
+  val @(arr, k) = $B.growing_to_arr(b)
   val () = println! (k, " ", cap)
   val () = show(arr, 0, 30)
   val () = show(arr, 997, 1000)
   val () = $A.free<byte>(arr)
-  val big = fill($B.screate(1), 0, 524288)
-  val big_cap = $B.scapacity(big)
-  val @(barr, bk) = $B.sto_arr(big)
+  val big = fill($B.growing_create(1), 0, 524288)
+  val big_cap = $B.growing_capacity(big)
+  val @(barr, bk) = $B.growing_to_arr(big)
   val () = println! (bk, " ", big_cap)
   val () = show(barr, 524285, 524288)
   val () = $A.free<byte>(barr)

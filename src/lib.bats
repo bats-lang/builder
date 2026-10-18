@@ -98,39 +98,41 @@ macdef _BUILDER_CAP = 524288
 (* ============================================================
    Growing builder (#43): the array is as large as the caller's first
    capacity and is made larger, by doubling, when a byte does not fit. So
-   a builder of a few bytes costs a few bytes, not BUILDER_CAP (a
-   builder's 512 KiB, zeroed by alloc, was most of the time an unchanged
-   bats check spent in the kernel). The capacity is in the type, as the
-   array's length is in builder's: a byte is written only where the array
-   has room, and the bytes are never more than BUILDER_CAP.
+   a builder of a few bytes costs a few bytes, not BUILDER_CAP: create's
+   512 KiB is zeroed by alloc, and making one per path or line is what
+   bats check spent its system time on (page faults; measured in the PR).
+   The capacity is in the type, as the array's length is in builder's: a
+   byte is written only where the array has room, and the bytes are never
+   more than BUILDER_CAP. create and builder are unchanged, so no
+   dependent's proof or call changes.
    ============================================================ *)
 
-#pub datavtype sbuilder(int, int) =
+#pub datavtype growing_builder(int, int) =
   | {lb:agz}{n,cap:nat | n <= cap; cap <= BUILDER_CAP}
-    SBuilder(n, cap) of ($A.arr(byte, lb, cap), int(n), int(cap))
+    GrowingBuilder(n, cap) of ($A.arr(byte, lb, cap), int(n), int(cap))
 
-#pub vtypedef sbuilder_v = [n,cap:nat | n <= cap; cap <= BUILDER_CAP] sbuilder(n, cap)
+#pub vtypedef growing_builder_v = [n,cap:nat | n <= cap; cap <= BUILDER_CAP] growing_builder(n, cap)
 
 (* An empty builder whose array holds cap bytes to begin with *)
-#pub fun screate {cap:pos | cap <= BUILDER_CAP}
-  (cap: int cap): sbuilder(0, cap)
+#pub fun growing_create {cap:pos | cap <= BUILDER_CAP}
+  (cap: int cap): growing_builder(0, cap)
 
-#pub fun slength {n,cap:nat | n <= cap}
-  (b: !sbuilder(n, cap)): int(n)
+#pub fun growing_length {n,cap:nat | n <= cap}
+  (b: !growing_builder(n, cap)): int(n)
 
-#pub fun scapacity {n,cap:nat | n <= cap}
-  (b: !sbuilder(n, cap)): int(cap)
+#pub fun growing_capacity {n,cap:nat | n <= cap}
+  (b: !growing_builder(n, cap)): int(cap)
 
-#pub fun sbuilder_free {n,cap:nat | n <= cap}
-  (b: sbuilder(n, cap)): void
+#pub fun growing_free {n,cap:nat | n <= cap}
+  (b: growing_builder(n, cap)): void
 
-#pub fun sto_arr {n,cap:nat | n <= cap}
-  (b: sbuilder(n, cap)): @([l:agz] $A.arr(byte, l, cap), int n)
+#pub fun growing_to_arr {n,cap:nat | n <= cap}
+  (b: growing_builder(n, cap)): @([l:agz] $A.arr(byte, l, cap), int n)
 
 (* Appends the byte v, growing the array first when it is full *)
-#pub fun sput_byte {n,cap:nat | n < BUILDER_CAP; n <= cap; cap <= BUILDER_CAP}
+#pub fun growing_put_byte {n,cap:nat | n < BUILDER_CAP; n <= cap; cap <= BUILDER_CAP}
   {v:nat | v < 256}
-  (b: sbuilder(n, cap), v: int v): [new_cap:nat | n + 1 <= new_cap; new_cap <= BUILDER_CAP] sbuilder(n + 1, new_cap)
+  (b: growing_builder(n, cap), v: int v): [new_cap:nat | n + 1 <= new_cap; new_cap <= BUILDER_CAP] growing_builder(n + 1, new_cap)
 
 (* ============================================================
    Implementations
@@ -271,28 +273,28 @@ implement rope_list_free (cs) = let
     | ~rope_cons(x, _, tl) => let val () = $A.free<byte>(x) in loop(tl) end
 in loop(cs) end
 
-implement screate(cap) = let
+implement growing_create(cap) = let
   val buf = $A.alloc<byte>(cap)
-in SBuilder(buf, 0, cap) end
+in GrowingBuilder(buf, 0, cap) end
 
-implement slength(b) = let
-  val+ @SBuilder(_, pos, _) = b
+implement growing_length(b) = let
+  val+ @GrowingBuilder(_, pos, _) = b
   val p = pos
   prval () = fold@(b)
 in p end
 
-implement scapacity(b) = let
-  val+ @SBuilder(_, _, cap) = b
+implement growing_capacity(b) = let
+  val+ @GrowingBuilder(_, _, cap) = b
   val c = cap
   prval () = fold@(b)
 in c end
 
-implement sbuilder_free(b) = let
-  val+ ~SBuilder(buf, _, _) = b
+implement growing_free(b) = let
+  val+ ~GrowingBuilder(buf, _, _) = b
 in $A.free<byte>(buf) end
 
-implement sto_arr(b) = let
-  val+ ~SBuilder(buf, pos, _) = b
+implement growing_to_arr(b) = let
+  val+ ~GrowingBuilder(buf, pos, _) = b
 in @(buf, pos) end
 
 (* The bytes [0, k) of src, into dst at the same places. Both arrays are
@@ -315,29 +317,29 @@ fn grown_cap {n,cap:nat | n < BUILDER_CAP; n <= cap; cap <= BUILDER_CAP}
 
 (* The byte put where the array has room: the builder is the same value,
    its length one more *)
-fn sput_fits {n,cap:nat | n < cap; cap <= BUILDER_CAP} {v:nat | v < 256}
-  (b: sbuilder(n, cap), v: int v): sbuilder(n + 1, cap) = let
-  val+ @SBuilder(buf, pos, _) = b
+fn put_fits {n,cap:nat | n < cap; cap <= BUILDER_CAP} {v:nat | v < 256}
+  (b: growing_builder(n, cap), v: int v): growing_builder(n + 1, cap) = let
+  val+ @GrowingBuilder(buf, pos, _) = b
   val () = $A.set<byte>(buf, pos, int2byte0(v))
   val () = pos := pos + 1
   prval () = fold@(b)
 in b end
 
 (* The byte put in an array made larger: the old one is copied and freed *)
-fn sput_grow {n,cap:nat | n < BUILDER_CAP; n <= cap; cap <= BUILDER_CAP} {v:nat | v < 256}
-  (b: sbuilder(n, cap), v: int v):
-  [new_cap:nat | n + 1 <= new_cap; new_cap <= BUILDER_CAP] sbuilder(n + 1, new_cap) = let
-  val+ ~SBuilder(buf, pos, old_cap) = b
+fn put_grow {n,cap:nat | n < BUILDER_CAP; n <= cap; cap <= BUILDER_CAP} {v:nat | v < 256}
+  (b: growing_builder(n, cap), v: int v):
+  [new_cap:nat | n + 1 <= new_cap; new_cap <= BUILDER_CAP] growing_builder(n + 1, new_cap) = let
+  val+ ~GrowingBuilder(buf, pos, old_cap) = b
   val new_cap = grown_cap(pos, old_cap)
   val grown = $A.alloc<byte>(new_cap)
   val () = copy_bytes(buf, grown, pos, 0)
   val () = $A.set<byte>(grown, pos, int2byte0(v))
   val () = $A.free<byte>(buf)
-in SBuilder(grown, pos + 1, new_cap) end
+in GrowingBuilder(grown, pos + 1, new_cap) end
 
-implement sput_byte(b, v) =
-  if slength(b) < scapacity(b) then sput_fits(b, v)
-  else sput_grow(b, v)
+implement growing_put_byte(b, v) =
+  if growing_length(b) < growing_capacity(b) then put_fits(b, v)
+  else put_grow(b, v)
 
 (* ============================================================
    Static tests
