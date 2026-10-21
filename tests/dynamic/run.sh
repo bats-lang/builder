@@ -7,7 +7,10 @@
 # If the package has an `expected` file, the binary's output must match
 # it exactly. If it has a `no-leaks` file, it runs under valgrind, which
 # must find no block definitely or indirectly lost (there is no GC: a
-# cell nothing frees is lost for good).
+# cell nothing frees is lost for good). If it has a `no-alloc-bytes` file
+# holding a size, it runs under valgrind's DHAT, and no allocation site may
+# allocate that total: a small rope must not make a BUILDER_CAP array
+# (builder#51). DHAT's sites carry their total bytes as "tb".
 #
 # usage: tests/dynamic/run.sh <repository-dir>   (bats must be on PATH)
 set -eu
@@ -33,6 +36,17 @@ if ! command -v valgrind >/dev/null 2>&1; then
   echo "error: valgrind is needed for the no-leaks tests" >&2; exit 1
 fi
 
+# The no-alloc-bytes check: the binary under DHAT, and the program points
+# whose total is the size in $1 are counted; any is a failure. Uses $n and
+# $w of the loop below.
+check_no_alloc () {
+  size=$(cat "$1")
+  (cd "$w" && $LIMIT valgrind -q --tool=dhat --dhat-out-file="$TMP/$n.dhat" "./dist/debug/$n") > "$TMP/$n.dhat.out" 2>&1 || return 1
+  hits=$(grep -c "\"tb\":$size[^0-9]" "$TMP/$n.dhat" || true)
+  echo "     $hits allocation site(s) of $size bytes in $n (DHAT)"
+  [ "$hits" -eq 0 ]
+}
+
 fail=0
 for d in "$ROOT"/tests/dynamic/*/; do
   [ -f "$d/bats.toml" ] || continue
@@ -44,6 +58,7 @@ for d in "$ROOT"/tests/dynamic/*/; do
   # without it (as the Rust bats does).
   if (cd "$w" && bats lock --dev --repository "$TMP/repo" && bats build --only debug --only native --repository "$TMP/repo") > "$TMP/$n.log" 2>&1 \
      && (cd "$w" && $LIMIT $RUN "./dist/debug/$n") > "$TMP/$n.out" 2>&1 \
+     && { [ ! -f "$d/no-alloc-bytes" ] || check_no_alloc "$d/no-alloc-bytes"; } \
      && { [ ! -f "$d/expected" ] || diff -u "$d/expected" "$TMP/$n.out"; }; then
     echo "ok   $n"
   else
