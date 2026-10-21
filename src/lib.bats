@@ -86,15 +86,22 @@ macdef _BUILDER_CAP = 524288
    Rope: text of any length, in builder-sized chunks
    ============================================================ *)
 
-(* k chunks, each an array of BUILDER_CAP bytes whose first n hold text *)
+(* k chunks, newest first. A chunk is a builder's own array (into_arr), of
+   cap bytes whose first n hold text: n <= cap <= BUILDER_CAP. The rule for
+   cap (#51): a builder's array starts at INITIAL_CAP and doubles when a
+   byte does not fit, so a chunk is INITIAL_CAP bytes or fewer than twice
+   the bytes it holds. A chunk of a few bytes is 64 bytes, not BUILDER_CAP;
+   only a chunk that holds that much is BUILDER_CAP bytes. The rule is in
+   the comment, not the type: builder hides its capacity. *)
 #pub datavtype rope_list(int) =
   | rope_nil(0)
-  | {k:nat}{lb:agz}{n:nat | n <= BUILDER_CAP}
-    rope_cons(k + 1) of ($A.arr(byte, lb, BUILDER_CAP), int n, rope_list(k))
+  | {k:nat}{cap:pos}{lb:agz}{n:nat | n <= cap; cap <= BUILDER_CAP}
+    rope_cons(k + 1) of ($A.arr(byte, lb, cap), int n, rope_list(k))
 
 (* Text of any length: the chunks already filled (newest first) and the
-   one being filled. Each chunk is one BUILDER_CAP allocation, so no
-   allocation grows with the text. *)
+   one being filled. Each chunk is one builder's array (rope_list), so the
+   allocation of a chunk is what its text needs, and no allocation grows
+   with the text. *)
 #pub datavtype rope =
   | {k:nat} Rope of (rope_list(k), builder_v)
 
@@ -269,7 +276,7 @@ in
     prval () = fold@(r)
   in end
   else let
-    val @(arr, len) = to_arr(cur)
+    val @(arr, len) = into_arr(cur)
     val () = cs := rope_cons(arr, len, cs)
     val () = cur := create()
     val () = put_byte(cur, v)
@@ -304,7 +311,7 @@ in $A.free<byte>($A.thaw<byte>(fz)) end
 
 implement rope_chunks (r) = let
   val+ ~Rope(cs, cur) = r
-  val @(arr, len) = to_arr(cur)
+  val @(arr, len) = into_arr(cur)
   (* cs is newest first: reversed onto acc, it comes out oldest first *)
   fun rev {a,b:nat} .<a>. (cs: rope_list(a), acc: rope_list(b)): rope_list(a + b) =
     case+ cs of

@@ -20,8 +20,8 @@ fn want (p: int): int =
 
 (* Checks chunk bytes [0, n) against positions from p; the next position,
    or ~1 at the first byte out of place *)
-fun check {l:agz}{n:nat | n <= $B.BUILDER_CAP}{j:nat | j <= n} .<n - j>.
-  (a: !$A.arr(byte, l, $B.BUILDER_CAP), n: int n, j: int j, p: int): int =
+fun check {l:agz}{cap:nat}{n:nat | n <= cap}{j:nat | j <= n} .<n - j>.
+  (a: !$A.arr(byte, l, cap), n: int n, j: int j, p: int): int =
   if j >= n then p
   else if byte2int0($A.get<byte>(a, j)) <> want(p) then ~1
   else check(a, n, j + 1, p + 1)

@@ -1,0 +1,7 @@
+[package]
+name = "rope_consumer"
+kind = "bin"
+
+[dependencies]
+"array" = ""
+"builder" = ""

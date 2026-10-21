@@ -1,0 +1,7 @@
+[package]
+name = "rope_chunk_full"
+kind = "bin"
+
+[dependencies]
+"array" = ""
+"builder" = ""
