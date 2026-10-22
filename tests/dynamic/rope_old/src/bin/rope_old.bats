@@ -31,7 +31,8 @@ fun into {k:nat}{la:agz}{m:pos}{f:nat} .<k>.
 
 fun show {la:agz}{m:pos}{j:nat | j <= m} .<m - j>.
   (a: !$A.arr(byte, la, m), m: int m, j: int j, n: int): void =
-  if j >= n || j >= m then println! ()
+  if j >= n then println! ()
+  else if j >= m then println! ()
   else let
     val () = print_char(int2char0(byte2int0($A.get<byte>(a, j))))
   in show(a, m, j + 1, n) end
