@@ -9,9 +9,9 @@
    into one array and printed; under valgrind every chunk must be freed.
    Remove with the ticket that removes the old form. *)
 
-fun copy {lc,la:agz}{m:pos}{n:nat | n <= $B.BUILDER_CAP}{i:nat | i <= n} .<n - i>.
+fun copy {lc,la:agz}{m:pos}{f:nat}{n:nat | n <= $B.BUILDER_CAP}{i:nat | i <= n} .<n - i>.
   (c: !$A.arr(byte, lc, $B.BUILDER_CAP), a: !$A.arr(byte, la, m), m: int m,
-   off: int, i: int i, n: int n): bool =
+   off: int f, i: int i, n: int n): bool =
   if i >= n then true
   else let
     val at = off + i
@@ -22,8 +22,8 @@ fun copy {lc,la:agz}{m:pos}{n:nat | n <= $B.BUILDER_CAP}{i:nat | i <= n} .<n - i
     else false
   end
 
-fun into {k:nat}{la:agz}{m:pos} .<k>.
-  (cs: !$B.rope_list(k), a: !$A.arr(byte, la, m), m: int m, off: int): bool =
+fun into {k:nat}{la:agz}{m:pos}{f:nat} .<k>.
+  (cs: !$B.rope_list(k), a: !$A.arr(byte, la, m), m: int m, off: int f): bool =
   case+ cs of
   | $B.rope_nil() => true
   | $B.rope_cons(c, n, tl) =>
