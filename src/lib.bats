@@ -93,17 +93,26 @@ macdef _BUILDER_CAP = 524288
    the bytes it holds. A chunk of a few bytes is 64 bytes, not BUILDER_CAP;
    only a chunk that holds that much is BUILDER_CAP bytes. The rule is in
    the comment, not the type: builder hides its capacity. *)
+#pub datavtype rope_sized_list(int) =
+  | rope_sized_nil(0)
+  | {k:nat}{cap:pos}{lb:agz}{n:nat | n <= cap; cap <= BUILDER_CAP}
+    rope_sized_cons(k + 1) of ($A.arr(byte, lb, cap), int n, rope_sized_list(k))
+
+(* k chunks, newest first, each an array of exactly BUILDER_CAP bytes: the
+   form every chunk had before #51, kept for one published version beside
+   rope_sized_list so a dependent that names the size (json's tests) still
+   type-checks; remove it with builder#56 (overlap). *)
 #pub datavtype rope_list(int) =
   | rope_nil(0)
-  | {k:nat}{cap:pos}{lb:agz}{n:nat | n <= cap; cap <= BUILDER_CAP}
-    rope_cons(k + 1) of ($A.arr(byte, lb, cap), int n, rope_list(k))
+  | {k:nat}{lb:agz}{n:nat | n <= BUILDER_CAP}
+    rope_cons(k + 1) of ($A.arr(byte, lb, BUILDER_CAP), int n, rope_list(k))
 
 (* Text of any length: the chunks already filled (newest first) and the
-   one being filled. Each chunk is one builder's array (rope_list), so the
+   one being filled. Each chunk is one builder's array (rope_sized_list), so the
    allocation of a chunk is what its text needs, and no allocation grows
    with the text. *)
 #pub datavtype rope =
-  | {k:nat} Rope of (rope_list(k), builder_v)
+  | {k:nat} Rope of (rope_sized_list(k), builder_v)
 
 #pub fun rope_create (): rope
 
@@ -120,10 +129,18 @@ macdef _BUILDER_CAP = 524288
 (* Appends b's text *)
 #pub fun rope_append (r: !rope, b: builder_v): void
 
-(* The rope's chunks, oldest first: its text is their texts in order *)
+(* The rope's chunks, oldest first: its text is their texts in order. Each
+   chunk is the builder's own array, no copy (#51) *)
+#pub fun rope_sized_chunks (r: rope): [k:nat] rope_sized_list(k)
+
+(* Frees a list of sized chunks *)
+#pub fun rope_sized_list_free {k:nat} (cs: rope_sized_list(k)): void
+
+(* The same chunks as rope_sized_chunks, each copied into an array of
+   BUILDER_CAP bytes: the old form, kept for one published version (#51) *)
 #pub fun rope_chunks (r: rope): [k:nat] rope_list(k)
 
-(* Frees a list of chunks *)
+(* Frees a list of BUILDER_CAP chunks *)
 #pub fun rope_list_free {k:nat} (cs: rope_list(k)): void
 
 (* ============================================================
@@ -265,7 +282,7 @@ implement bput(b, s) = let
   val slen = g1u2i(string1_length(s))
 in loop(b, s, slen, 0) end
 
-implement rope_create () = Rope(rope_nil(), create())
+implement rope_create () = Rope(rope_sized_nil(), create())
 
 implement rope_put (r, v) = let
   val+ @Rope(cs, cur) = r
@@ -277,7 +294,7 @@ in
   in end
   else let
     val @(arr, len) = into_arr(cur)
-    val () = cs := rope_cons(arr, len, cs)
+    val () = cs := rope_sized_cons(arr, len, cs)
     val () = cur := create()
     val () = put_byte(cur, v)
     prval () = fold@(r)
@@ -309,15 +326,40 @@ implement rope_append (r, b) = let
   val () = $A.drop<byte>(fz, bv)
 in $A.free<byte>($A.thaw<byte>(fz)) end
 
-implement rope_chunks (r) = let
+implement rope_sized_chunks (r) = let
   val+ ~Rope(cs, cur) = r
   val @(arr, len) = into_arr(cur)
   (* cs is newest first: reversed onto acc, it comes out oldest first *)
-  fun rev {a,b:nat} .<a>. (cs: rope_list(a), acc: rope_list(b)): rope_list(a + b) =
+  fun rev {a,b:nat} .<a>. (cs: rope_sized_list(a), acc: rope_sized_list(b)): rope_sized_list(a + b) =
     case+ cs of
-    | ~rope_nil() => acc
-    | ~rope_cons(x, n, tl) => rev(tl, rope_cons(x, n, acc))
-in rev(rope_cons(arr, len, cs), rope_nil()) end
+    | ~rope_sized_nil() => acc
+    | ~rope_sized_cons(x, n, tl) => rev(tl, rope_sized_cons(x, n, acc))
+in rev(rope_sized_cons(arr, len, cs), rope_sized_nil()) end
+
+implement rope_sized_list_free (cs) = let
+  fun loop {k:nat} .<k>. (cs: rope_sized_list(k)): void =
+    case+ cs of
+    | ~rope_sized_nil() => ()
+    | ~rope_sized_cons(x, _, tl) => let val () = $A.free<byte>(x) in loop(tl) end
+in loop(cs) end
+
+(* The old chunk: the sized chunk's n bytes copied into BUILDER_CAP bytes *)
+fn widen_chunk {l:agz}{cap:pos}{n:nat | n <= cap; cap <= BUILDER_CAP}
+  (small: $A.arr(byte, l, cap), n: int n): [m:agz] $A.arr(byte, m, BUILDER_CAP) = let
+  val big = $A.alloc<byte>(_BUILDER_CAP)
+  val () = copy_bytes(small, big, n, 0)
+  val () = $A.free<byte>(small)
+in big end
+
+implement rope_chunks (r) = let
+  val+ ~Rope(cs, cur) = r
+  val @(arr, len) = into_arr(cur)
+  (* as rope_sized_chunks, each chunk widened as it is moved *)
+  fun rev {a,b:nat} .<a>. (cs: rope_sized_list(a), acc: rope_list(b)): rope_list(a + b) =
+    case+ cs of
+    | ~rope_sized_nil() => acc
+    | ~rope_sized_cons(x, n, tl) => rev(tl, rope_cons(widen_chunk(x, n), n, acc))
+in rev(rope_sized_cons(arr, len, cs), rope_nil()) end
 
 implement rope_list_free (cs) = let
   fun loop {k:nat} .<k>. (cs: rope_list(k)): void =

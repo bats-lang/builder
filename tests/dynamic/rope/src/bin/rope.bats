@@ -27,10 +27,10 @@ fun check {l:agz}{cap:nat}{n:nat | n <= cap}{j:nat | j <= n} .<n - j>.
   else check(a, n, j + 1, p + 1)
 
 (* The chunks' total length, or ~1; frees them *)
-fun walk {k:nat} .<k>. (cs: $B.rope_list(k), p: int, count: int): @(int, int) =
+fun walk {k:nat} .<k>. (cs: $B.rope_sized_list(k), p: int, count: int): @(int, int) =
   case+ cs of
-  | ~$B.rope_nil() => @(p, count)
-  | ~$B.rope_cons(a, n, tl) => let
+  | ~$B.rope_sized_nil() => @(p, count)
+  | ~$B.rope_sized_cons(a, n, tl) => let
       val q = (if p < 0 then ~1 else check(a, n, 0, p)): int
       val () = $A.free<byte>(a)
     in walk(tl, q, count + 1) end
@@ -39,7 +39,7 @@ implement main0 () = let
   val r = $B.rope_create()
   val () = fill(r, 0)
   val () = $B.rope_bput(r, "end")
-  val @(total, chunks) = walk($B.rope_chunks(r), 0, 0)
+  val @(total, chunks) = walk($B.rope_sized_chunks(r), 0, 0)
 in
   println! ("total ", total, " chunks ", chunks)
 end

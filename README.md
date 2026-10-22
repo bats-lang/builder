@@ -24,15 +24,16 @@ costs a few bytes. Linear — must finalize with `to_arr` / `into_arr` or free.
 ## Rope
 
 A rope is text of any length, held as chunks: the chunks already filled
-(`rope_list`, newest first) and the builder being filled.
+(`rope_sized_list`, newest first) and the builder being filled.
 
 - `rope_create()`, `rope_put(r, v)`, `rope_bput(r, s)`, `rope_copy(r, src, start, stop)`, `rope_append(r, b)` — append
-- `rope_chunks(r)` — the chunks, oldest first, the rope given up; `rope_list_free(cs)` frees them
+- `rope_sized_chunks(r)` — the chunks, oldest first, the rope given up; `rope_sized_list_free(cs)` frees them
+- `rope_chunks(r)`, `rope_list_free(cs)` — the old form, each chunk an array of exactly `BUILDER_CAP` bytes (a copy), kept for one published version beside the sized one and removed by builder#56
 
 A chunk is a builder's own array, `cap` bytes of which the first `n` hold
 text (`n <= cap <= BUILDER_CAP`, proved by the type). A builder's array starts
 at 64 bytes and doubles, so a chunk is 64 bytes or fewer than twice the bytes
-it holds: a rope of a few bytes allocates 64 bytes, not `BUILDER_CAP` (#51). The rule is in the comment on `rope_list`, not in its type.
+it holds: a rope of a few bytes allocates 64 bytes, not `BUILDER_CAP` (#51). The rule is in the comment on `rope_sized_list`, not in its type.
 
 ## Dependencies
 

@@ -11,24 +11,24 @@
    under DHAT no allocation site of that size may remain. The types bound a
    chunk's capacity (the static rejects in tests/static say so). *)
 
-fun chunk_count {k:nat} .<k>. (cs: !$B.rope_list(k), acc: int): int =
+fun chunk_count {k:nat} .<k>. (cs: !$B.rope_sized_list(k), acc: int): int =
   case+ cs of
-  | $B.rope_nil() => acc
-  | $B.rope_cons(_, _, tl) => chunk_count(tl, acc + 1)
+  | $B.rope_sized_nil() => acc
+  | $B.rope_sized_cons(_, _, tl) => chunk_count(tl, acc + 1)
 
-fun text_total {k:nat} .<k>. (cs: !$B.rope_list(k), acc: int): int =
+fun text_total {k:nat} .<k>. (cs: !$B.rope_sized_list(k), acc: int): int =
   case+ cs of
-  | $B.rope_nil() => acc
-  | $B.rope_cons(_, n, tl) => text_total(tl, acc + n)
+  | $B.rope_sized_nil() => acc
+  | $B.rope_sized_cons(_, n, tl) => text_total(tl, acc + n)
 
 implement main0 () = let
   val r = $B.rope_create()
   val () = $B.rope_bput(r, "hello")
-  val cs = $B.rope_chunks(r)
+  val cs = $B.rope_sized_chunks(r)
   val () = println! ("chunks ", chunk_count(cs, 0), " total ", text_total(cs, 0))
-  val () = $B.rope_list_free(cs)
+  val () = $B.rope_sized_list_free(cs)
   val e = $B.rope_create()
-  val ce = $B.rope_chunks(e)
+  val ce = $B.rope_sized_chunks(e)
   val () = println! ("chunks ", chunk_count(ce, 0), " total ", text_total(ce, 0))
-  val () = $B.rope_list_free(ce)
+  val () = $B.rope_sized_list_free(ce)
 in end

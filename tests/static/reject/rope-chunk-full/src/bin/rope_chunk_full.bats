@@ -8,10 +8,10 @@
 
 fn needs_full {l:agz} (a: !$A.arr(byte, l, $B.BUILDER_CAP)): void = ()
 
-fun first_chunk_full {k:nat} .<k>. (cs: !$B.rope_list(k)): void =
+fun first_chunk_full {k:nat} .<k>. (cs: !$B.rope_sized_list(k)): void =
   case+ cs of
-  | $B.rope_nil() => ()
-  | @$B.rope_cons(a, _, tl) => let
+  | $B.rope_sized_nil() => ()
+  | @$B.rope_sized_cons(a, _, tl) => let
       val () = needs_full(a)
       prval () = fold@(cs)
     in end

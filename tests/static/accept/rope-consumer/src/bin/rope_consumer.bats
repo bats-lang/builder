@@ -8,10 +8,10 @@
    its capacity is. A chunk is not typed BUILDER_CAP, so this must type-check
    for any chunk the rope gives (#51). *)
 
-fun drain {k:nat} .<k>. (cs: !$B.rope_list(k)): int =
+fun drain {k:nat} .<k>. (cs: !$B.rope_sized_list(k)): int =
   case+ cs of
-  | $B.rope_nil() => 0
-  | @$B.rope_cons(a, n, tl) => let
+  | $B.rope_sized_nil() => 0
+  | @$B.rope_sized_cons(a, n, tl) => let
       val @(fz, bv) = $A.freeze<byte>(a)
       val @(left, right) = $A.borrow_split<byte>(fz, bv, n)
       val () = $A.drop<byte>(fz, $A.borrow_join<byte>(fz, left, right))
@@ -23,7 +23,7 @@ fun drain {k:nat} .<k>. (cs: !$B.rope_list(k)): int =
 implement main0 () = let
   val r = $B.rope_create()
   val () = $B.rope_bput(r, "hello")
-  val cs = $B.rope_chunks(r)
+  val cs = $B.rope_sized_chunks(r)
   val total = drain(cs)
-  val () = $B.rope_list_free(cs)
+  val () = $B.rope_sized_list_free(cs)
 in println! ("drained ", total) end
