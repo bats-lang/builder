@@ -7,7 +7,7 @@
    lengths add up to 1200003 and every byte, across the chunk boundaries,
    is in place. *)
 
-fun fill {i:nat | i <= 1200000} .<1200000 - i>. (r: !$B.rope, i: int i): void =
+fun fill {i:nat | i <= 1200000} .<1200000 - i>. (r: !$B.sized_rope, i: int i): void =
   if i >= 1200000 then ()
   else let
     val () = $B.sized_rope_put(r, nmod(i, 251))
