@@ -1,0 +1,7 @@
+[package]
+name = "rope_small"
+kind = "bin"
+
+[dependencies]
+"array" = ""
+"builder" = ""
