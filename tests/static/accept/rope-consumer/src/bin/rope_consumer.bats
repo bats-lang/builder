@@ -21,9 +21,9 @@ fun drain {k:nat} .<k>. (cs: !$B.rope_sized_list(k)): int =
     in r end
 
 implement main0 () = let
-  val r = $B.rope_create()
-  val () = $B.rope_bput(r, "hello")
-  val cs = $B.rope_sized_chunks(r)
+  val r = $B.sized_rope_create()
+  val () = $B.sized_rope_bput(r, "hello")
+  val cs = $B.sized_rope_chunks(r)
   val total = drain(cs)
   val () = $B.rope_sized_list_free(cs)
 in println! ("drained ", total) end

@@ -10,7 +10,7 @@
 fun fill {i:nat | i <= 1200000} .<1200000 - i>. (r: !$B.rope, i: int i): void =
   if i >= 1200000 then ()
   else let
-    val () = $B.rope_put(r, nmod(i, 251))
+    val () = $B.sized_rope_put(r, nmod(i, 251))
   in fill(r, i + 1) end
 
 (* The byte at position p: the pattern, then "end" *)
@@ -36,10 +36,10 @@ fun walk {k:nat} .<k>. (cs: $B.rope_sized_list(k), p: int, count: int): @(int, i
     in walk(tl, q, count + 1) end
 
 implement main0 () = let
-  val r = $B.rope_create()
+  val r = $B.sized_rope_create()
   val () = fill(r, 0)
-  val () = $B.rope_bput(r, "end")
-  val @(total, chunks) = walk($B.rope_sized_chunks(r), 0, 0)
+  val () = $B.sized_rope_bput(r, "end")
+  val @(total, chunks) = walk($B.sized_rope_chunks(r), 0, 0)
 in
   println! ("total ", total, " chunks ", chunks)
 end

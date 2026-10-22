@@ -22,13 +22,13 @@ fun text_total {k:nat} .<k>. (cs: !$B.rope_sized_list(k), acc: int): int =
   | $B.rope_sized_cons(_, n, tl) => text_total(tl, acc + n)
 
 implement main0 () = let
-  val r = $B.rope_create()
-  val () = $B.rope_bput(r, "hello")
-  val cs = $B.rope_sized_chunks(r)
+  val r = $B.sized_rope_create()
+  val () = $B.sized_rope_bput(r, "hello")
+  val cs = $B.sized_rope_chunks(r)
   val () = println! ("chunks ", chunk_count(cs, 0), " total ", text_total(cs, 0))
   val () = $B.rope_sized_list_free(cs)
-  val e = $B.rope_create()
-  val ce = $B.rope_sized_chunks(e)
+  val e = $B.sized_rope_create()
+  val ce = $B.sized_rope_chunks(e)
   val () = println! ("chunks ", chunk_count(ce, 0), " total ", text_total(ce, 0))
   val () = $B.rope_sized_list_free(ce)
 in end
