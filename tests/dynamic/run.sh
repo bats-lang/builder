@@ -8,9 +8,15 @@
 # it exactly. If it has a `no-leaks` file, it runs under valgrind, which
 # must find no block definitely or indirectly lost (there is no GC: a
 # cell nothing frees is lost for good). If it has a `no-alloc-bytes` file
-# holding a size, it runs under valgrind's DHAT, and no allocation site may
-# allocate that total: a small rope must not make a BUILDER_CAP array
-# (builder#51). DHAT's sites carry their total bytes as "tb".
+# holding a size, it runs under valgrind's --trace-malloc=yes, which prints
+# one line for every block the program allocates, and no block may be of
+# that size: a small rope must not make a BUILDER_CAP array (builder#51).
+# Every block is counted, not a site's total (DHAT's "tb" is a site's total
+# bytes and "tbk" its blocks, so a site that makes the size twice, or the size
+# and other blocks, has a total that is not the size: builder#55). A package
+# with a `no-alloc-bytes-control` file instead is a negative control: it
+# allocates a block of that size from a site whose total is not the size, and
+# passes only when the check finds the block and fails.
 #
 # usage: tests/dynamic/run.sh <repository-dir>   (bats must be on PATH)
 set -eu
@@ -36,15 +42,36 @@ if ! command -v valgrind >/dev/null 2>&1; then
   echo "error: valgrind is needed for the no-leaks tests" >&2; exit 1
 fi
 
-# The no-alloc-bytes check: the binary under DHAT, and the program points
-# whose total is the size in $1 are counted; any is a failure. Uses $n and
-# $w of the loop below.
+# The no-alloc-bytes check: the binary under valgrind with --trace-malloc=yes
+# (valgrind --help-debug: "debugging options for Valgrind tools that replace
+# malloc"), which logs "malloc(N)", "calloc(N,M)", "realloc(P,N)" and the
+# memalign family, one line for each block. The blocks of exactly the size in
+# $1 are counted. Uses $n and $w of the loop below. Returns 1 when a block of
+# the size was made, 2 when the program did not run.
 check_no_alloc () {
   size=$(cat "$1")
-  (cd "$w" && $LIMIT valgrind -q --tool=dhat --dhat-out-file="$TMP/$n.dhat" "./dist/debug/$n") > "$TMP/$n.dhat.out" 2>&1 || return 1
-  hits=$(grep -c "\"tb\":$size[^0-9]" "$TMP/$n.dhat" || true)
-  echo "     $hits allocation site(s) of $size bytes in $n (DHAT)"
-  [ "$hits" -eq 0 ]
+  (cd "$w" && $LIMIT valgrind -q --trace-malloc=yes "./dist/debug/$n") > "$TMP/$n.alloc.out" 2>&1 || return 2
+  hits=$(awk -v size="$size" '
+    /^--[0-9]+-- [a-z_]+\(/ {
+      call = $0; sub(/^--[0-9]+-- /, "", call)
+      name = call; sub(/\(.*/, "", name)
+      args = call; sub(/^[^(]*\(/, "", args); sub(/\).*/, "", args)
+      if (name == "malloc" || name == "valloc") bytes = args
+      else if (name == "calloc") { split(args, a, ","); bytes = a[1] * a[2] }
+      else if (name == "realloc") { split(args, a, ","); bytes = a[2] }
+      else if (name ~ /align/) { bytes = args; sub(/.*size /, "", bytes) }
+      else next
+      if (bytes + 0 == size + 0) hits++
+    }
+    END { print hits + 0 }' "$TMP/$n.alloc.out")
+  echo "     $hits block(s) of $size bytes in $n (valgrind --trace-malloc)"
+  [ "$hits" -eq 0 ] || return 1
+}
+
+# A negative control: the check must find a block of the size (status 1).
+control_fails () {
+  if check_no_alloc "$1"; then rc=0; else rc=$?; fi
+  [ "$rc" -eq 1 ]
 }
 
 fail=0
@@ -59,6 +86,7 @@ for d in "$ROOT"/tests/dynamic/*/; do
   if (cd "$w" && bats lock --dev --repository "$TMP/repo" && bats build --only debug --only native --repository "$TMP/repo") > "$TMP/$n.log" 2>&1 \
      && (cd "$w" && $LIMIT $RUN "./dist/debug/$n") > "$TMP/$n.out" 2>&1 \
      && { [ ! -f "$d/no-alloc-bytes" ] || check_no_alloc "$d/no-alloc-bytes"; } \
+     && { [ ! -f "$d/no-alloc-bytes-control" ] || control_fails "$d/no-alloc-bytes-control"; } \
      && { [ ! -f "$d/expected" ] || diff -u "$d/expected" "$TMP/$n.out"; }; then
     echo "ok   $n"
   else
