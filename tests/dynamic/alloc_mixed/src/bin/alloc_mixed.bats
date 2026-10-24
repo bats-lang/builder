@@ -11,11 +11,11 @@
    check as failed, and this test passes only then. Everything is freed
    (no-leaks). *)
 
-fn make {n:pos} (n: int n): void = let
+fn make {n:pos | n <= 1048576} (n: int n): void = let
   val a = $A.alloc<byte>(n)
 in $A.free<byte>(a) end
 
-fun rounds {k:nat}{n:pos} .<k>. (k: int k, n: int n): void =
+fun rounds {k:nat}{n:pos | n <= 1048576} .<k>. (k: int k, n: int n): void =
   if k <= 0 then () else let
     val () = make(n)
   in rounds(k - 1, 100) end
