@@ -11,7 +11,7 @@
    check as failed, and this test passes only then. Everything is freed
    (no-leaks). *)
 
-fun make {n:pos} (n: int n): void = let
+fn make {n:pos} (n: int n): void = let
   val a = $A.alloc<byte>(n)
 in $A.free<byte>(a) end
 

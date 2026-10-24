@@ -11,7 +11,7 @@
    blocks of that size and so report the check as failed, and this test
    passes only then. Everything is freed (no-leaks). *)
 
-fun once (): void = let
+fn once (): void = let
   val r = $B.rope_create()
   val () = $B.rope_bput(r, "hello")
   val cs = $B.rope_chunks(r)
