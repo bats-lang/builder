@@ -23,6 +23,50 @@ set -eu
 ROOT=$(cd "$(dirname "$0")/../.." && pwd)
 TMP=$(mktemp -d)
 trap 'rm -rf "$TMP"' EXIT
+# count_blocks SIZE LOG: how many blocks of SIZE bytes a --trace-malloc log
+# (valgrind --help-debug: "debugging options for Valgrind tools that replace
+# malloc") records, one line "--pid-- name(args) = address" for each call.
+# The size is the requested one: malloc(N) and the operator new forms take
+# N, calloc(N,M) N*M, realloc(P,N) the new size N, and the aligned forms
+# (memalign, posix_memalign, aligned_alloc, new with an alignment) the
+# number after "size ". The frees are skipped. A line of any other name
+# prints "unrecognised: <line>" instead of a count, so no allocator form is
+# silently ignored. Lines without the "--pid-- " prefix are the program's.
+count_blocks () {
+  awk -v size="$1" '
+    /^--[0-9]+-- / {
+      call = $0; sub(/^--[0-9]+-- /, "", call)
+      name = call; sub(/\(.*/, "", name)
+      args = call; sub(/^[^(]*\(/, "", args); sub(/\).*/, "", args)
+      if (name == "malloc" || name ~ /^(__builtin_(vec_)?new|_Zn[wa]m(RKSt9nothrow_t)?)$/) bytes = args
+      else if (name == "calloc") { split(args, a, ","); bytes = a[1] * a[2] }
+      else if (name == "realloc") { split(args, a, ","); bytes = a[2] }
+      else if (name ~ /^(memalign|posix_memalign|aligned_alloc|_Zn[wa]mSt11align_val_t(RKSt9nothrow_t)?)$/) { bytes = args; sub(/.*size /, "", bytes) }
+      else if (name ~ /^(free|cfree|malloc_usable_size|__builtin_(vec_)?delete|_Zd[la]Pv.*)$/) next
+      else { print "unrecognised: " $0; bad = 1; exit }
+      if (bytes + 0 == size + 0) hits++
+    }
+    END { if (!bad) print hits + 0 }' "$2"
+}
+
+# The table of fixed log lines (trace-malloc-lines: size, the count
+# count_blocks must report or "unrecognised", the log line, tab separated)
+# is run first, so every branch of count_blocks is exercised and a
+# mismatch fails the run.
+tab=$(printf '\t')
+table_bad=0
+while IFS="$tab" read -r tsize want line; do
+  case "$tsize" in ''|'#'*) continue ;; esac
+  printf '%s\n' "$line" > "$TMP/table.log"
+  got=$(count_blocks "$tsize" "$TMP/table.log")
+  case "$got" in unrecognised*) got=unrecognised ;; esac
+  if [ "$got" != "$want" ]; then
+    echo "FAIL trace-malloc-lines: size $tsize, line '$line': want $want, got $got"; table_bad=1
+  fi
+done < "$ROOT/tests/dynamic/trace-malloc-lines"
+[ "$table_bad" -eq 0 ] || exit 1
+echo "ok   trace-malloc-lines"
+
 cp -R "$1" "$TMP/repo"
 (cd "$ROOT" && bats upload --repository "$TMP/repo" >/dev/null)
 # Keep only the archive just uploaded, so lock cannot pick a published
@@ -42,28 +86,18 @@ if ! command -v valgrind >/dev/null 2>&1; then
   echo "error: valgrind is needed for the no-leaks tests" >&2; exit 1
 fi
 
-# The no-alloc-bytes check: the binary under valgrind with --trace-malloc=yes
-# (valgrind --help-debug: "debugging options for Valgrind tools that replace
-# malloc"), which logs "malloc(N)", "calloc(N,M)", "realloc(P,N)" and the
-# memalign family, one line for each block. The blocks of exactly the size in
-# $1 are counted. Uses $n and $w of the loop below. Returns 1 when a block of
-# the size was made, 2 when the program did not run.
+# The no-alloc-bytes check: the binary under valgrind with --trace-malloc=yes,
+# and the blocks of exactly the size in $1 are counted (count_blocks). Uses $n
+# and $w of the loop below. Returns 1 when a block of the size was made, 2
+# when the program did not run or its log has an allocation line count_blocks
+# does not know (a check that can miss a block must fail, not pass).
 check_no_alloc () {
   size=$(cat "$1")
   (cd "$w" && $LIMIT valgrind -q --trace-malloc=yes "./dist/debug/$n") > "$TMP/$n.alloc.out" 2>&1 || return 2
-  hits=$(awk -v size="$size" '
-    /^--[0-9]+-- [a-z_]+\(/ {
-      call = $0; sub(/^--[0-9]+-- /, "", call)
-      name = call; sub(/\(.*/, "", name)
-      args = call; sub(/^[^(]*\(/, "", args); sub(/\).*/, "", args)
-      if (name == "malloc" || name == "valloc") bytes = args
-      else if (name == "calloc") { split(args, a, ","); bytes = a[1] * a[2] }
-      else if (name == "realloc") { split(args, a, ","); bytes = a[2] }
-      else if (name ~ /align/) { bytes = args; sub(/.*size /, "", bytes) }
-      else next
-      if (bytes + 0 == size + 0) hits++
-    }
-    END { print hits + 0 }' "$TMP/$n.alloc.out")
+  hits=$(count_blocks "$size" "$TMP/$n.alloc.out")
+  case "$hits" in
+    unrecognised*) echo "     $hits"; return 2 ;;
+  esac
   echo "     $hits block(s) of $size bytes in $n (valgrind --trace-malloc)"
   [ "$hits" -eq 0 ] || return 1
 }

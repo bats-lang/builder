@@ -8,8 +8,9 @@
    The chunks are counted and their lengths added up, then freed; under
    valgrind every chunk must be freed. The allocations are counted by
    tests/dynamic/run.sh from this package's no-alloc-bytes file (524288):
-   under valgrind --trace-malloc no block of that size may be allocated. The types bound a
-   chunk's capacity (the static rejects in tests/static say so). *)
+   under valgrind --trace-malloc no block of that size may be allocated.
+   The types bound a chunk's capacity (the static rejects in
+   tests/static say so). *)
 
 fun chunk_count {k:nat} .<k>. (cs: !$B.rope_sized_list(k), acc: int): int =
   case+ cs of
