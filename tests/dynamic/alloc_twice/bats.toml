@@ -1,0 +1,7 @@
+[package]
+name = "alloc_twice"
+kind = "bin"
+
+[dependencies]
+"array" = ""
+"builder" = ""

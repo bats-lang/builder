@@ -1,0 +1,35 @@
+# size<TAB>count count_blocks must report<TAB>log line; run by run.sh before the packages
+524288	1	--1-- malloc(524288) = 0x4A7B040
+524288	0	--1-- malloc(524289) = 0x4A7B040
+524288	0	--1-- malloc(64) = 0x4A7B040
+524288	1	--1-- calloc(524288,1) = 0x4A7B040
+524288	1	--1-- calloc(1,524288) = 0x4A7B040
+524288	1	--1-- calloc(2,262144) = 0x4A7B040
+524288	0	--1-- calloc(64,1) = 0x4A7B040
+524288	1	--1-- realloc(0x4A7B040,524288) = 0x4A7C040
+524288	0	--1-- realloc(0x4A7B040,100) = 0x4A7C040
+524288	0	--1-- realloc(0x80000,100) = 0x4A7C040
+524288	1	--1-- memalign(al 64, size 524288) = 0x4A7B040
+524288	0	--1-- memalign(al 524288, size 64) = 0x4A7B040
+524288	1	--1-- posix_memalign(al 64, size 524288) = 0x4A7B040
+524288	0	--1-- posix_memalign(al 524288, size 64) = 0x4A7B040
+524288	1	--1-- aligned_alloc(al 64, size 524288) = 0x4A7B040
+524288	0	--1-- aligned_alloc(al 524288, size 64) = 0x4A7B040
+524288	1	--1-- _ZnwmSt11align_val_t(size 524288, al 64) = 0x4A7B040
+524288	0	--1-- _ZnwmSt11align_val_t(size 64, al 524288) = 0x4A7B040
+524288	1	--1-- _ZnamSt11align_val_tRKSt9nothrow_t(size 524288, al 64) = 0x4A7B040
+524288	1	--1-- __builtin_new(524288) = 0x4A7B040
+524288	1	--1-- __builtin_vec_new(524288) = 0x4A7B040
+524288	1	--1-- _Znwm(524288) = 0x4A7B040
+524288	1	--1-- _Znam(524288) = 0x4A7B040
+524288	1	--1-- _ZnwmRKSt9nothrow_t(524288) = 0x4A7B040
+524288	0	--1-- _Znwm(64) = 0x4A7B040
+524288	0	--1-- free(0x4A7B040)
+524288	0	--1-- cfree(0x4A7B040)
+524288	0	--1-- _ZdlPv(0x4A7B040)
+524288	0	--1-- __builtin_delete(0x4A7B040)
+524288	0	--1-- malloc_usable_size(0x4A7B040)
+524288	0	chunks 1 total 524288
+524288	unrecognised	--1-- reallocarray(0x4A7B040,1,524288) = 0x4A7C040
+524288	unrecognised	--1-- valloc(524288) = 0x4A7B040
+524288	unrecognised	--1-- some_new_allocator(524288) = 0x4A7B040
