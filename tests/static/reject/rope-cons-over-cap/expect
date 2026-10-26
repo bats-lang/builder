@@ -1,0 +1,3 @@
+rope_cons_over_cap.bats: 451(line=10, offs=22) -- 451(line=10, offs=22): error(3): unsolved constraint
+S2Eintinf(100)
+S2Eintinf(64)

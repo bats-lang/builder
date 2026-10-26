@@ -4,7 +4,10 @@
 # it with an unsolved constraint (a proof the types demand and the code
 # does not make), so a reject that fails for another reason (a typo) is a
 # failure too. The accepts show the rejects are rejected for their one
-# line.
+# line. A reject with an `expect` file must also print every line of it
+# (each a fixed string of patsopt's error: the file and place of the
+# constraint and the numbers it could not prove), so that a reject refused
+# for another unsolved constraint is a failure (builder#51).
 #
 # usage: tests/static/run.sh <repository-dir>   (bats must be on PATH)
 set -eu
@@ -31,10 +34,17 @@ for kind in accept reject; do
     else
       status=fail
     fi
+    expect_ok=yes
+    if [ -f "$d/expect" ]; then
+      while IFS= read -r want; do
+        [ -n "$want" ] || continue
+        grep -qF -- "$want" "$log" || expect_ok=no
+      done < "$d/expect"
+    fi
     if [ "$kind" = accept ] && [ "$status" = pass ]; then
       echo "ok   accept/$n"
     elif [ "$kind" = reject ] && [ "$status" = fail ] && grep -q 'error(3): unsolved constraint' "$log" \
-         && ! grep -q 'error(2)\|error(1)' "$log"; then
+         && ! grep -q 'error(2)\|error(1)' "$log" && [ "$expect_ok" = yes ]; then
       echo "ok   reject/$n"
     else
       echo "FAIL $kind/$n ($status)"; tail -8 "$log"; fail=1
