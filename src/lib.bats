@@ -87,7 +87,8 @@ macdef _BUILDER_CAP = 524288
    ============================================================ *)
 
 (* k chunks, each an array of BUILDER_CAP bytes whose first n hold text. The
-   published form, kept as it is until builder#56 removes it. *)
+   published form, kept as it is. Deprecated (rope-chunks): removed by
+   builder#56. *)
 #pub datavtype rope_list(int) =
   | rope_nil(0)
   | {k:nat}{lb:agz}{n:nat | n <= BUILDER_CAP}
@@ -121,7 +122,7 @@ macdef _BUILDER_CAP = 524288
 #pub fun rope_list_free {k:nat} (cs: rope_list(k)): void
 
 (* ------------------------------------------------------------
-   The sized rope (#51): a chunk is the builder's own array. It is a new
+   The sized rope (rope-chunks, #51): a chunk is the builder's own array. It is a new
    type beside the rope above, which stays as published (builder#56
    removes that one), so nothing a dependent matches on changes.
    ------------------------------------------------------------ *)
